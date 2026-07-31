@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withEvents(discover: [
+        __DIR__.'/../app/Modules/Projects/Listeners',
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         //
     })
@@ -19,11 +22,21 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*'),
         );
 
-        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e, Request $request) {
-            if ($request->expectsJson() || $request->is('api/*')) {
-                return response()->json(['message' => 'Not Found.'], 404);
+        $exceptions->render(function (\Throwable $e, Request $request) {
+            $isForbidden = false;
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException || $e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                $isForbidden = true;
+            } elseif ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface && $e->getStatusCode() === 403) {
+                $isForbidden = true;
             }
 
-            return redirect()->to('/admin');
+            if ($isForbidden) {
+                if ($request->expectsJson() || $request->is('api/*')) {
+                    return response()->json(['message' => 'Not Found.'], 404);
+                }
+
+                return new \Illuminate\Http\RedirectResponse('/admin');
+            }
         });
     })->create();

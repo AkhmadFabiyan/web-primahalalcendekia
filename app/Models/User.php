@@ -15,12 +15,19 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'phone', 'password'])]
+#[Fillable(['name', 'email', 'phone', 'password', 'status', 'client_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasUuids, SoftDeletes, HasRoles;
+    use HasFactory, Notifiable, HasUuids, SoftDeletes, HasRoles, \Spatie\Activitylog\Models\Concerns\LogsActivity;
+
+    public function getActivitylogOptions(): \Spatie\Activitylog\Support\LogOptions
+    {
+        return \Spatie\Activitylog\Support\LogOptions::defaults()
+            ->logOnly(['name', 'email', 'status'])
+            ->logOnlyDirty();
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -54,6 +61,11 @@ class User extends Authenticatable implements FilamentUser
     public function isSuperAdmin(): bool
     {
         return $this->hasRole(\App\Enums\Role::SUPER_ADMIN->value);
+    }
+
+    public function client()
+    {
+        return $this->belongsTo(\App\Modules\Clients\Models\Client::class);
     }
 
     public function isClient(): bool

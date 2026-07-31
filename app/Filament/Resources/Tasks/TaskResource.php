@@ -1,0 +1,102 @@
+<?php
+
+namespace App\Filament\Resources\Tasks;
+
+use App\Filament\Resources\Tasks\Pages;
+use App\Modules\Workflows\Enums\TaskStatus;
+use App\Modules\Workflows\Models\Task;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+
+class TaskResource extends Resource
+{
+    protected static ?string $model = Task::class;
+
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationLabel = 'Tugas';
+    protected static ?string $modelLabel = 'Tugas';
+    protected static ?string $pluralModelLabel = 'Tugas';
+    protected static ?int $navigationSort = 3;
+
+    public static function getNavigationBadge(): ?string
+    {
+        /** @var \App\Models\User */
+        $user = auth()->user();
+
+        $query = static::getModel()::query()->where('status', '!=', TaskStatus::COMPLETED->value);
+
+        // Only count user's own tasks unless they are manajerial
+        if (!$user->hasRole(['Super Admin', 'Manager Operasional'])) {
+            $query->where('assigned_to', $user->id);
+        }
+
+        return (string) $query->count();
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('project.client.business_id')
+                    ->label('ID Klien')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('title')
+                    ->label('Nama Tugas')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('project.client.name')
+                    ->label('Perusahaan')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('entered_at')
+                    ->label('Timestamp Masuk')
+                    ->dateTime()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('deadline')
+                    ->label('Deadline')
+                    ->dateTime()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('priority')
+                    ->label('Prioritas')
+                    ->badge()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('status')
+                    ->label('Status')
+                    ->badge()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('assignee.name')
+                    ->label('PIC Aktif')
+                    ->searchable()
+                    ->sortable(),
+                // Seluruh PIC bisa didapatkan via relasi project_assignments, di MVP ini kita render PIC Aktif Tugas dan Client
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('status')
+                    ->options(TaskStatus::class),
+            ])
+            ->actions([
+                Tables\Actions\ViewAction::make(),
+                // TBD: Action Kerjakan, Buka Project
+            ])
+            ->bulkActions([
+                // No bulk actions
+            ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            //
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListTasks::route('/'),
+        ];
+    }
+}
