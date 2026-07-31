@@ -1,0 +1,25 @@
+erDiagram
+
+CLIENTS ||--o{ PROJECTS : owns
+USERS ||--o{ PROJECT_ASSIGNMENTS : assigned
+PROJECTS ||--o{ PROJECT_ASSIGNMENTS : has
+
+PROJECTS ||--o{ DOCUMENTS : contains
+DOCUMENT_TYPES ||--o{ DOCUMENTS : type
+
+PROJECTS ||--o{ INVOICES : generates
+INVOICES ||--o{ PAYMENTS : paid_by
+
+PROJECTS ||--o{ WORKFLOW_STEPS : has
+PROJECTS ||--o{ WORKFLOW_HISTORIES : records
+
+PROJECTS ||--o{ CERTIFICATES : produces
+
+PROJECTS ||--o{ ACTIVITY_LOGS : logs
+
+USERS ||--o{ ACTIVITY_LOGS : performs
+
+PROJECTS ||--o{ NOTIFICATIONS : sends
+
+USERS ||--o{ USER_ROLES : owns
+ROLES ||--o{ USER_ROLES : grants

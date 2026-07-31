@@ -1,0 +1,18 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+@import '@fontsource/poppins';
+@import '@fontsource/jetbrains-mono';
+
+h1, h2, h3, h4, h5, h6,
+.fi-header-heading {
+    font-family: 'Poppins', sans-serif !important;
+}
+
+code, pre, .font-mono,
+.fi-ta-text-item-mono,
+.fi-in-text-item-mono {
+    font-family: 'JetBrains Mono', monospace !important;
+}

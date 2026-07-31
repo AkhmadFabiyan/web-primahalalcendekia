@@ -1,0 +1,59 @@
+flowchart TD
+
+Lead
+
+↓
+
+Deal
+
+↓
+
+Client
+
+↓
+
+Project
+
+↓
+
+Invoice Aktivasi
+
+↓
+
+Payment
+
+↓
+
+Project Active
+
+Project Active --> Admin
+
+Project Active --> Audit
+
+Admin --> UploadDokumen
+
+UploadDokumen --> Entry
+
+Entry --> SPV
+
+SPV --> WorkflowA
+
+Audit --> Jadwal
+
+Jadwal --> Auditor
+
+Auditor --> WorkflowB
+
+WorkflowA --> Sinkronisasi
+
+WorkflowB --> Sinkronisasi
+
+Sinkronisasi --> InvoiceNegara
+
+InvoiceNegara --> PaymentNegara
+
+PaymentNegara --> Sertifikat
+
+Sertifikat --> Pelunasan
+
+Pelunasan --> Finished
