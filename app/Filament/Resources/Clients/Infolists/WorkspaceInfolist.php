@@ -1336,6 +1336,294 @@ class WorkspaceInfolist
                                     }),
                             ])
                             ->columnSpan(1),
+
+                        \Filament\Infolists\Components\Section::make('Invoice & Pembayaran Negara')
+                            ->description('Unggah invoice dari BPJPH dan catat pembayarannya.')
+                            ->schema([
+                                TextEntry::make('gov_invoice_status')
+                                    ->label('Status Invoice Negara')
+                                    ->state(function ($record) {
+                                        if (!$record->project) return '-';
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
+                                            ->first();
+                                            
+                                        if (!$invoice) {
+                                            return $record->project->status === \App\Modules\Projects\Enums\ProjectStatus::WAITING_GOVERNMENT_INVOICE 
+                                                ? 'Menunggu Diunggah' 
+                                                : '-';
+                                        }
+                                        
+                                        return $invoice->status->getLabel();
+                                    })
+                                    ->badge(),
+                                    
+                                TextEntry::make('gov_invoice_nominal')
+                                    ->label('Tagihan')
+                                    ->state(function ($record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project?->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
+                                            ->first();
+                                        return $invoice ? 'Rp ' . number_format($invoice->total, 0, ',', '.') : '-';
+                                    }),
+                            ])
+                            ->headerActions([
+                                \Filament\Infolists\Components\Actions\Action::make('unggah_invoice_negara')
+                                    ->label('Unggah Invoice Negara')
+                                    ->icon('heroicon-o-arrow-up-tray')
+                                    ->color('primary')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        if ($record->project->status !== \App\Modules\Projects\Enums\ProjectStatus::WAITING_GOVERNMENT_INVOICE) return false;
+                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) return false;
+                                        
+                                        $hasInvoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
+                                            ->exists();
+                                            
+                                        return !$hasInvoice;
+                                    })
+                                    ->form([
+                                        \Filament\Forms\Components\TextInput::make('invoice_number')
+                                            ->label('Nomor Invoice (dari BPJPH)')
+                                            ->required(),
+                                        \Filament\Forms\Components\TextInput::make('nominal')
+                                            ->label('Nominal Tagihan')
+                                            ->numeric()
+                                            ->required(),
+                                        \Filament\Forms\Components\DatePicker::make('due_date')
+                                            ->label('Jatuh Tempo')
+                                            ->required(),
+                                        \Filament\Forms\Components\FileUpload::make('file')
+                                            ->label('File Invoice (PDF)')
+                                            ->acceptedFileTypes(['application/pdf'])
+                                            ->required()
+                                            ->preserveFilenames(),
+                                    ])
+                                    ->action(function (array $data, $record) {
+                                        try {
+                                            app(\App\Modules\Payments\Services\GovernmentInvoiceService::class)->create(
+                                                $record->project->id,
+                                                \Illuminate\Support\Facades\Auth::user(),
+                                                $data
+                                            );
+                                            \Filament\Notifications\Notification::make()->title('Invoice Negara berhasil diunggah')->success()->send();
+                                        } catch (\Exception $e) {
+                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                        }
+                                    }),
+                                    
+                                \Filament\Infolists\Components\Actions\Action::make('catat_pembayaran_negara')
+                                    ->label('Catat Pembayaran')
+                                    ->icon('heroicon-o-currency-dollar')
+                                    ->color('success')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) return false;
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->whereIn('status', [
+                                                \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value,
+                                                \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value,
+                                            ])
+                                            ->first();
+                                            
+                                        return $invoice !== null;
+                                    })
+                                    ->form([
+                                        \Filament\Forms\Components\DatePicker::make('payment_date')
+                                            ->label('Tanggal Pembayaran')
+                                            ->default(now())
+                                            ->required(),
+                                        \Filament\Forms\Components\TextInput::make('amount')
+                                            ->label('Nominal Pembayaran')
+                                            ->numeric()
+                                            ->required(),
+                                        \Filament\Forms\Components\TextInput::make('payment_method')
+                                            ->label('Metode Pembayaran (Contoh: Transfer Bank)')
+                                            ->required(),
+                                        \Filament\Forms\Components\TextInput::make('reference_number')
+                                            ->label('No. Referensi')
+                                            ->nullable(),
+                                        \Filament\Forms\Components\Textarea::make('notes')
+                                            ->label('Catatan')
+                                            ->nullable(),
+                                        \Filament\Forms\Components\FileUpload::make('proof_file')
+                                            ->label('Bukti Pembayaran')
+                                            ->required()
+                                            ->preserveFilenames(),
+                                    ])
+                                    ->action(function (array $data, $record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->whereIn('status', [
+                                                \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value,
+                                                \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value,
+                                            ])
+                                            ->first();
+                                            
+                                        if (!$invoice) return;
+                                        
+                                        try {
+                                            app(\App\Modules\Payments\Services\PaymentService::class)->createPayment($invoice, $data, $data['proof_file'] ?? null);
+                                            \Filament\Notifications\Notification::make()->title('Pembayaran berhasil dicatat dan menunggu verifikasi')->success()->send();
+                                        } catch (\Exception $e) {
+                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                        }
+                                    }),
+                                    
+                                \Filament\Infolists\Components\Actions\Action::make('verifikasi_pembayaran_negara')
+                                    ->label('Verifikasi Pembayaran')
+                                    ->icon('heroicon-o-check-circle')
+                                    ->color('success')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Finance'])) return false;
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        if (!$invoice) return false;
+                                        
+                                        return $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->exists();
+                                    })
+                                    ->form(function ($record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        $pendingPayments = $invoice ? $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->get() : collect();
+                                        
+                                        $options = $pendingPayments->mapWithKeys(function ($payment) {
+                                            return [$payment->id => "Rp " . number_format($payment->amount, 0, ',', '.') . " (" . $payment->payment_date->format('d M Y') . ")"];
+                                        });
+                                        
+                                        return [
+                                            \Filament\Forms\Components\Select::make('payment_id')
+                                                ->label('Pilih Pembayaran Pending')
+                                                ->options($options)
+                                                ->required(),
+                                            \Filament\Forms\Components\Textarea::make('verification_notes')
+                                                ->label('Catatan Verifikasi')
+                                                ->nullable(),
+                                        ];
+                                    })
+                                    ->action(function (array $data) {
+                                        $payment = \App\Modules\Payments\Models\Payment::find($data['payment_id']);
+                                        if (!$payment) return;
+                                        
+                                        try {
+                                            app(\App\Modules\Payments\Services\PaymentService::class)->verifyPayment($payment, $data);
+                                            \Filament\Notifications\Notification::make()->title('Pembayaran diverifikasi')->success()->send();
+                                        } catch (\Exception $e) {
+                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                        }
+                                    }),
+                                    
+                                \Filament\Infolists\Components\Actions\Action::make('tolak_pembayaran_negara')
+                                    ->label('Tolak Pembayaran')
+                                    ->icon('heroicon-o-x-circle')
+                                    ->color('danger')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Finance'])) return false;
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        if (!$invoice) return false;
+                                        
+                                        return $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->exists();
+                                    })
+                                    ->form(function ($record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        $pendingPayments = $invoice ? $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->get() : collect();
+                                        
+                                        $options = $pendingPayments->mapWithKeys(function ($payment) {
+                                            return [$payment->id => "Rp " . number_format($payment->amount, 0, ',', '.') . " (" . $payment->payment_date->format('d M Y') . ")"];
+                                        });
+                                        
+                                        return [
+                                            \Filament\Forms\Components\Select::make('payment_id')
+                                                ->label('Pilih Pembayaran Pending')
+                                                ->options($options)
+                                                ->required(),
+                                            \Filament\Forms\Components\Textarea::make('rejection_reason')
+                                                ->label('Alasan Penolakan')
+                                                ->required(),
+                                        ];
+                                    })
+                                    ->action(function (array $data) {
+                                        $payment = \App\Modules\Payments\Models\Payment::find($data['payment_id']);
+                                        if (!$payment) return;
+                                        
+                                        try {
+                                            app(\App\Modules\Payments\Services\PaymentService::class)->rejectPayment($payment, $data);
+                                            \Filament\Notifications\Notification::make()->title('Pembayaran ditolak')->success()->send();
+                                        } catch (\Exception $e) {
+                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                        }
+                                    }),
+                                    
+                                \Filament\Infolists\Components\Actions\Action::make('lihat_invoice_negara')
+                                    ->label('Lihat Invoice')
+                                    ->icon('heroicon-o-document-text')
+                                    ->color('gray')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        return $invoice && $invoice->getFirstMedia('government-invoice-document');
+                                    })
+                                    ->url(function ($record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                        
+                                        return $invoice ? $invoice->getFirstMediaUrl('government-invoice-document') : '#';
+                                    })
+                                    ->openUrlInNewTab(),
+                                    
+                                \Filament\Infolists\Components\Actions\Action::make('lihat_bukti_pembayaran_negara')
+                                    ->label('Lihat Bukti Bayar Terakhir')
+                                    ->icon('heroicon-o-photo')
+                                    ->color('gray')
+                                    ->visible(function ($record) {
+                                        if (!$record->project) return false;
+                                        
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        if (!$invoice) return false;
+                                        
+                                        $latestPayment = $invoice->payments()->latest()->first();
+                                        return $latestPayment && $latestPayment->getFirstMedia('payment-proofs');
+                                    })
+                                    ->url(function ($record) {
+                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                            ->first();
+                                            
+                                        $latestPayment = $invoice->payments()->latest()->first();
+                                        return $latestPayment ? $latestPayment->getFirstMediaUrl('payment-proofs') : '#';
+                                    })
+                                    ->openUrlInNewTab(),
+                            ])
+                            ->columnSpanFull(),
                         ]),
 
 
@@ -1357,11 +1645,175 @@ class WorkspaceInfolist
 
                     Tabs\Tab::make('Pembayaran')
                         ->icon('heroicon-o-currency-dollar')
-                        ->schema([
-                            TextEntry::make('pembayaran_placeholder')
-                                ->hiddenLabel()
-                                ->default('Tab Pembayaran akan diimplementasikan pada milestone selanjutnya.'),
-                        ]),
+                        ->schema(function ($record) {
+                            if (!$record->project) {
+                                return [
+                                    TextEntry::make('pembayaran_placeholder')
+                                        ->hiddenLabel()
+                                        ->default('Belum ada project yang dikerjakan.'),
+                                ];
+                            }
+                            
+                            $summary = \App\Modules\Projects\Services\ProjectFinancialSummaryService::calculate($record->project);
+                            $isPartner = $record->project->client->type === \App\Modules\Clients\Enums\ClientType::PARTNER->value;
+                            
+                            // Cek jika butuh Termin
+                            $canIssueTermin = $record->project->paymentSchedules()
+                                ->where('status', 'PENDING')
+                                ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::INSTALLMENT->value)
+                                ->exists();
+                                
+                            // Cek jika butuh Pelunasan
+                            $canIssueSettlement = false;
+                            if (!$canIssueTermin) {
+                                $clientRem = \Brick\Math\BigDecimal::of($summary['client_remaining_uninvoiced']);
+                                $partnerRem = \Brick\Math\BigDecimal::of($summary['partner_remaining_uninvoiced']);
+                                
+                                $hasUnpaid = $record->project->invoices()
+                                    ->whereIn('status', [
+                                        \App\Modules\Payments\Enums\InvoiceStatus::DRAFT->value, 
+                                        \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value, 
+                                        \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value
+                                    ])
+                                    ->where('invoice_type', '!=', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                    ->exists();
+                                    
+                                $hasSettlement = $record->project->invoices()
+                                    ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::SETTLEMENT->value)
+                                    ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
+                                    ->exists();
+                                
+                                if (!$hasUnpaid && !$hasSettlement && ($clientRem->isGreaterThan(0) || $partnerRem->isGreaterThan(0))) {
+                                    $canIssueSettlement = true;
+                                }
+                            }
+                            
+                            $user = \Illuminate\Support\Facades\Auth::user();
+                            $canManage = $user->hasRole(['Super Admin', 'Finance']);
+
+                            return [
+                                \Filament\Infolists\Components\Section::make('Ringkasan Finansial Komersial')
+                                    ->schema([
+                                        TextEntry::make('financial.client_contract')
+                                            ->label('Nilai Kontrak Klien')
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_contract'], 0, ',', '.')),
+                                        TextEntry::make('financial.client_invoiced')
+                                            ->label('Total Ditagih (Klien)')
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_invoiced'], 0, ',', '.')),
+                                        TextEntry::make('financial.client_paid')
+                                            ->label('Total Terbayar (Klien)')
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_paid'], 0, ',', '.')),
+                                        TextEntry::make('financial.client_rem_uninvoiced')
+                                            ->label('Sisa Belum Ditagih (Klien)')
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_remaining_uninvoiced'], 0, ',', '.')),
+                                        TextEntry::make('financial.client_rem_unpaid')
+                                            ->label('Sisa Belum Dibayar (Klien)')
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_remaining_unpaid'], 0, ',', '.')),
+                                            
+                                        // Partner info
+                                        TextEntry::make('financial.partner_contract')
+                                            ->label('Nilai Kontrak Mitra')
+                                            ->visible($isPartner)
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_contract'], 0, ',', '.')),
+                                        TextEntry::make('financial.partner_invoiced')
+                                            ->label('Total Ditagih (Mitra)')
+                                            ->visible($isPartner)
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_invoiced'], 0, ',', '.')),
+                                        TextEntry::make('financial.partner_paid')
+                                            ->label('Total Terbayar (Mitra)')
+                                            ->visible($isPartner)
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_paid'], 0, ',', '.')),
+                                        TextEntry::make('financial.partner_rem_uninvoiced')
+                                            ->label('Sisa Belum Ditagih (Mitra)')
+                                            ->visible($isPartner)
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_remaining_uninvoiced'], 0, ',', '.')),
+                                        TextEntry::make('financial.partner_rem_unpaid')
+                                            ->label('Sisa Belum Dibayar (Mitra)')
+                                            ->visible($isPartner)
+                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_remaining_unpaid'], 0, ',', '.')),
+                                    ])
+                                    ->columns(5)
+                                    ->headerActions([
+                                        \Filament\Infolists\Components\Actions\Action::make('issue_termin')
+                                            ->label('Terbitkan Termin Berikutnya')
+                                            ->color('primary')
+                                            ->visible($canIssueTermin && $canManage)
+                                            ->form([
+                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                    ->label('Tanggal Terbit')
+                                                    ->default(now())
+                                                    ->required(),
+                                                \Filament\Forms\Components\DatePicker::make('due_date')
+                                                    ->label('Jatuh Tempo')
+                                                    ->default(now()->addDays(7))
+                                                    ->required(),
+                                                \Filament\Forms\Components\Textarea::make('notes')
+                                                    ->label('Catatan Tambahan')
+                                                    ->nullable(),
+                                            ])
+                                            ->action(function (array $data, $record) {
+                                                try {
+                                                    app(\App\Modules\Payments\Services\TerminService::class)->issueNextTermin(
+                                                        $record->project, 
+                                                        $data['issued_at'], 
+                                                        $data['due_date'], 
+                                                        $data['notes'], 
+                                                        \Illuminate\Support\Facades\Auth::user()
+                                                    );
+                                                    \Filament\Notifications\Notification::make()->title('Termin diterbitkan')->success()->send();
+                                                } catch (\Exception $e) {
+                                                    \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                                }
+                                            }),
+                                            
+                                        \Filament\Infolists\Components\Actions\Action::make('issue_settlement')
+                                            ->label('Terbitkan Invoice Pelunasan')
+                                            ->color('success')
+                                            ->visible($canIssueSettlement && $canManage)
+                                            ->form([
+                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                    ->label('Tanggal Terbit')
+                                                    ->default(now())
+                                                    ->required(),
+                                                \Filament\Forms\Components\DatePicker::make('due_date')
+                                                    ->label('Jatuh Tempo')
+                                                    ->default(now()->addDays(7))
+                                                    ->required(),
+                                                \Filament\Forms\Components\Textarea::make('notes')
+                                                    ->label('Catatan Tambahan')
+                                                    ->nullable(),
+                                            ])
+                                            ->action(function (array $data, $record) {
+                                                try {
+                                                    app(\App\Modules\Payments\Services\TerminService::class)->issueSettlement(
+                                                        $record->project, 
+                                                        $data['issued_at'], 
+                                                        $data['due_date'], 
+                                                        $data['notes'], 
+                                                        \Illuminate\Support\Facades\Auth::user()
+                                                    );
+                                                    \Filament\Notifications\Notification::make()->title('Pelunasan diterbitkan')->success()->send();
+                                                } catch (\Exception $e) {
+                                                    \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                                }
+                                            }),
+                                    ]),
+                                    
+                                \Filament\Infolists\Components\RepeatableEntry::make('project.invoices')
+                                    ->label('Daftar Invoice')
+                                    ->schema([
+                                        TextEntry::make('invoice_number')->label('No. Invoice'),
+                                        TextEntry::make('invoice_type')->label('Jenis'),
+                                        TextEntry::make('audience')->label('Audience'),
+                                        TextEntry::make('subtotal')
+                                            ->label('Nominal')
+                                            ->formatStateUsing(fn ($state) => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                                        TextEntry::make('status')->label('Status')->badge(),
+                                        TextEntry::make('due_date')->label('Jatuh Tempo')->date('d M Y'),
+                                    ])
+                                    ->columns(6),
+                            ];
+                        }),
 
                     Tabs\Tab::make('Timeline')
                         ->icon('heroicon-o-clock')
@@ -1389,10 +1841,253 @@ class WorkspaceInfolist
 
                     Tabs\Tab::make('Sertifikat')
                         ->icon('heroicon-o-academic-cap')
+                        ->schema(function ($record) {
+                            if (!$record->project) {
+                                return [
+                                    TextEntry::make('sertifikat_placeholder')
+                                        ->hiddenLabel()
+                                        ->default('Belum ada project yang dikerjakan.'),
+                                ];
+                            }
+                            
+                            $certificate = $record->project->certificate;
+                            
+                            if (!$certificate) {
+                                return [
+                                    TextEntry::make('sertifikat_placeholder')
+                                        ->hiddenLabel()
+                                        ->default('Sertifikat belum diterbitkan.'),
+                                        
+                                    \Filament\Infolists\Components\Actions::make([
+                                        \Filament\Infolists\Components\Actions\Action::make('unggah_sertifikat')
+                                            ->label('Unggah Sertifikat')
+                                            ->icon('heroicon-o-arrow-up-tray')
+                                            ->color('primary')
+                                            ->visible(function ($record) {
+                                                if (!$record->project) return false;
+                                                
+                                                // Hanya jika project WAITING_CERTIFICATE
+                                                if ($record->project->status !== \App\Modules\Projects\Enums\ProjectStatus::WAITING_CERTIFICATE) {
+                                                    return false;
+                                                }
+                                                
+                                                // Hanya jika invoice PAID
+                                                $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
+                                                    ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                                    ->first();
+                                                    
+                                                if (!$invoice || $invoice->status !== \App\Modules\Payments\Enums\InvoiceStatus::PAID) {
+                                                    return false;
+                                                }
+                                                
+                                                // Authorization
+                                                $user = \Illuminate\Support\Facades\Auth::user();
+                                                if ($user->hasRole('Super Admin')) return true;
+                                                
+                                                if ($user->hasRole('Admin Perusahaan')) {
+                                                    $assignment = \App\Modules\Projects\Models\ProjectAssignment::where('project_id', $record->project->id)
+                                                        ->where('user_id', $user->id)
+                                                        ->where('role', 'PIC')
+                                                        ->first();
+                                                        
+                                                    return $assignment !== null;
+                                                }
+                                                
+                                                return false;
+                                            })
+                                            ->form([
+                                                \Filament\Forms\Components\TextInput::make('certificate_number')
+                                                    ->label('Nomor Sertifikat')
+                                                    ->required()
+                                                    ->unique('certificates', 'certificate_number'),
+                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                    ->label('Tanggal Terbit')
+                                                    ->required(),
+                                                \Filament\Forms\Components\DatePicker::make('valid_until')
+                                                    ->label('Masa Berlaku (Opsional)')
+                                                    ->after('issued_at')
+                                                    ->nullable(),
+                                                \Filament\Forms\Components\FileUpload::make('file')
+                                                    ->label('Dokumen Sertifikat (PDF)')
+                                                    ->acceptedFileTypes(['application/pdf'])
+                                                    ->maxSize(5120) // Maksimal 5MB
+                                                    ->required()
+                                                    ->storeFiles(false),
+                                            ])
+                                            ->action(function (array $data, $record, \Filament\Forms\Components\FileUpload $component) {
+                                                try {
+                                                    $file = collect($component->getState())->first();
+                                                    
+                                                    app(\App\Modules\Projects\Services\CertificateService::class)->issueCertificate(
+                                                        $record->project, 
+                                                        $data, 
+                                                        $file, 
+                                                        \Illuminate\Support\Facades\Auth::user()
+                                                    );
+                                                    
+                                                    \Filament\Notifications\Notification::make()
+                                                        ->title('Sertifikat Berhasil Diunggah')
+                                                        ->success()
+                                                        ->send();
+                                                } catch (\Exception $e) {
+                                                    \Filament\Notifications\Notification::make()
+                                                        ->title('Gagal Mengunggah Sertifikat')
+                                                        ->body($e->getMessage())
+                                                        ->danger()
+                                                        ->send();
+                                                }
+                                            })
+                                    ])->columnSpanFull(),
+                                ];
+                            }
+                            
+                            return [
+                                \Filament\Infolists\Components\Section::make('Informasi Sertifikat')
+                                    ->schema([
+                                        TextEntry::make('project.certificate.certificate_number')
+                                            ->label('Nomor Sertifikat'),
+                                        TextEntry::make('project.certificate.issued_at')
+                                            ->label('Tanggal Terbit')
+                                            ->date('d M Y'),
+                                        TextEntry::make('project.certificate.valid_until')
+                                            ->label('Masa Berlaku')
+                                            ->date('d M Y')
+                                            ->default('-'),
+                                        TextEntry::make('project.certificate.uploader.name')
+                                            ->label('Diterbitkan Oleh'),
+                                        TextEntry::make('project.certificate.created_at')
+                                            ->label('Waktu Penerbitan')
+                                            ->dateTime('d M Y H:i'),
+                                            
+                                        \Filament\Infolists\Components\Actions::make([
+                                            \Filament\Infolists\Components\Actions\Action::make('lihat_sertifikat')
+                                                ->label('Lihat Sertifikat')
+                                                ->icon('heroicon-o-eye')
+                                                ->color('gray')
+                                                ->visible(function ($record) {
+                                                    return $record->project && $record->project->certificate && $record->project->certificate->getFirstMedia('certificate');
+                                                })
+                                                ->url(function ($record) {
+                                                    return $record->project->certificate->getFirstMediaUrl('certificate');
+                                                })
+                                                ->openUrlInNewTab(),
+                                                
+                                            \Filament\Infolists\Components\Actions\Action::make('unduh_sertifikat')
+                                                ->label('Unduh Sertifikat')
+                                                ->icon('heroicon-o-arrow-down-tray')
+                                                ->color('primary')
+                                                ->visible(function ($record) {
+                                                    return $record->project && $record->project->certificate && $record->project->certificate->getFirstMedia('certificate');
+                                                })
+                                                ->action(function ($record) {
+                                                    $media = $record->project->certificate->getFirstMedia('certificate');
+                                                    return response()->download($media->getPath(), $media->file_name);
+                                                }),
+                                        ])->columnSpanFull(),
+                                    ])
+                                    ->columns(2),
+                            ];
+                        }),
+
+                    Tabs\Tab::make('Penyelesaian')
+                        ->icon('heroicon-o-flag')
                         ->schema([
-                            TextEntry::make('sertifikat_placeholder')
-                                ->hiddenLabel()
-                                ->default('Tab Sertifikat akan diimplementasikan pada milestone selanjutnya.'),
+                            Section::make('Checklist Penyelesaian Project')
+                                ->schema(function ($record) {
+                                    if (!$record->project) return [];
+
+                                    $readiness = \App\Modules\Projects\Services\ProjectClosureReadinessService::evaluate($record->project);
+                                    
+                                    $checklist = [
+                                        'certificate_issued' => 'Sertifikat telah diterbitkan',
+                                        'government_invoice_paid' => 'Invoice Negara telah dibayar',
+                                        'no_draft_invoice' => 'Tidak ada Invoice aktif berstatus DRAFT',
+                                        'no_published_invoice' => 'Tidak ada Invoice aktif berstatus PUBLISHED',
+                                        'no_partial_invoice' => 'Tidak ada Invoice aktif berstatus PARTIAL',
+                                        'no_pending_payment' => 'Tidak ada Payment berstatus PENDING',
+                                        'all_termin_invoiced' => 'Seluruh jadwal Termin telah ditagihkan',
+                                        'no_remaining_uninvoiced' => 'Sisa belum ditagihkan bernilai 0',
+                                        'no_remaining_unpaid' => 'Sisa belum dibayar bernilai 0',
+                                        'client_obligations_paid' => 'Seluruh kewajiban CLIENT telah lunas',
+                                    ];
+
+                                    if ($record->client_type === \App\Modules\Clients\Enums\ClientType::PARTNER) {
+                                        $checklist['partner_obligations_paid'] = 'Seluruh kewajiban PARTNER telah lunas';
+                                    }
+                                    $checklist['no_open_tasks'] = 'Tidak ada Task wajib yang masih terbuka';
+
+                                    $schema = [];
+                                    foreach ($checklist as $key => $label) {
+                                        $isReady = $readiness[$key] ?? false;
+                                        $icon = $isReady ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle';
+                                        $color = $isReady ? 'success' : 'danger';
+                                        
+                                        $schema[] = \Filament\Infolists\Components\TextEntry::make('chk_' . $key)
+                                            ->label($label)
+                                            ->default($isReady ? 'Terpenuhi' : 'Belum')
+                                            ->badge()
+                                            ->color($color)
+                                            ->icon($icon);
+                                    }
+
+                                    return $schema;
+                                })
+                                ->columns(2)
+                                ->headerActions([
+                                    Action::make('batalkan_project')
+                                        ->label('Batalkan Project')
+                                        ->color('danger')
+                                        ->icon('heroicon-o-archive-box-x-mark')
+                                        ->requiresConfirmation()
+                                        ->visible(function ($record) {
+                                            if (!$record->project) return false;
+                                            if ($record->project->isLocked()) return false;
+                                            
+                                            // Action only for Super Admin or specific roles
+                                            return Auth::user()->hasAnyRole(['Super Admin', 'Admin Perusahaan']);
+                                        })
+                                        ->form([
+                                            \Filament\Forms\Components\Textarea::make('reason')
+                                                ->label('Alasan Pembatalan')
+                                                ->required()
+                                        ])
+                                        ->action(function (array $data, $record) {
+                                            try {
+                                                app(\App\Modules\Projects\Services\ProjectCancellationService::class)
+                                                    ->cancel($record->project, $data['reason'], Auth::user());
+                                                Notification::make()->title('Project Dibatalkan')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal Membatalkan')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+
+                                    Action::make('buka_kembali_project')
+                                        ->label('Buka Kembali Project')
+                                        ->color('warning')
+                                        ->icon('heroicon-o-arrow-path')
+                                        ->requiresConfirmation()
+                                        ->visible(function ($record) {
+                                            if (!$record->project) return false;
+                                            if (!$record->project->isLocked()) return false;
+                                            
+                                            // Khusus Super Admin
+                                            return Auth::user()->hasRole('Super Admin');
+                                        })
+                                        ->form([
+                                            \Filament\Forms\Components\Textarea::make('reason')
+                                                ->label('Alasan Membuka Kembali')
+                                                ->required()
+                                        ])
+                                        ->action(function (array $data, $record) {
+                                            try {
+                                                app(\App\Modules\Projects\Services\ProjectReopeningService::class)
+                                                    ->reopen($record->project, $data['reason'], Auth::user());
+                                                Notification::make()->title('Project Dibuka Kembali')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal Membuka Kembali')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+                                ]),
                         ]),
                 ])
                 ->columnSpanFull(),

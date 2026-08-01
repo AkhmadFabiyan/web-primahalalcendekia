@@ -16,9 +16,12 @@ use App\Modules\Payments\Enums\InvoiceType;
 use App\Modules\Payments\Enums\InvoiceAudience;
 use App\Modules\Payments\Enums\InvoiceStatus;
 
-class Invoice extends Model
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+
+class Invoice extends Model implements HasMedia
 {
-    use HasUuids, HasFactory, SoftDeletes, LogsActivity;
+    use HasUuids, HasFactory, SoftDeletes, LogsActivity, InteractsWithMedia, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
     protected $guarded = [];
 
@@ -66,5 +69,13 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('government-invoice-document')
+            ->acceptsMimeTypes(['application/pdf'])
+            ->useDisk('local') // private disk
+            ->singleFile();
     }
 }

@@ -110,6 +110,8 @@ class PaymentService
             $lockedInvoice->save();
             
             $this->checkAndEmitActivationEvent($lockedInvoice, $lockedPayment);
+            $this->checkAndEmitGovernmentEvent($lockedInvoice, $lockedPayment);
+            $this->checkAndEmitCompletionEvent($lockedInvoice);
 
             return $lockedPayment;
         });
@@ -117,28 +119,38 @@ class PaymentService
 
     /**
      * Reject a payment.
+     *
+     * @param string $paymentId
+     * @param array $data
+     * @return Payment
      */
-    public function rejectPayment(Payment $payment, array $data): Payment
+    public function rejectPayment(string $paymentId, array $data): Payment
     {
-        return DB::transaction(function () use ($payment, $data) {
-            $lockedPayment = Payment::where('id', $payment->id)->lockForUpdate()->first();
+        return DB::transaction(function () use ($paymentId, $data) {
+            $lockedPayment = Payment::where('id', $paymentId)->lockForUpdate()->firstOrFail();
 
             if ($lockedPayment->status !== PaymentStatus::PENDING) {
                 throw new Exception("Hanya pembayaran berstatus PENDING yang dapat ditolak.");
             }
 
-            if (empty($data['rejection_reason'])) {
-                throw new Exception("Alasan penolakan wajib diisi.");
-            }
-
             $lockedPayment->status = PaymentStatus::REJECTED;
-            $lockedPayment->rejection_reason = $data['rejection_reason'];
-            $lockedPayment->rejected_by = auth()->id();
-            $lockedPayment->rejected_at = now();
+            $lockedPayment->verification_notes = $data['verification_notes'] ?? null;
+            $lockedPayment->verified_by = auth()->id();
+            $lockedPayment->verified_at = now();
             $lockedPayment->save();
 
             return $lockedPayment;
         });
+    }
+    
+    private function checkAndEmitCompletionEvent(Invoice $invoice): void
+    {
+        if ($invoice->project_id) {
+            $project = \App\Modules\Projects\Models\Project::find($invoice->project_id);
+            if ($project) {
+                app(\App\Modules\Projects\Services\ProjectCompletionService::class)->checkCompletion($project);
+            }
+        }
     }
     
     private function checkAndEmitActivationEvent(Invoice $invoice, Payment $payment): void
@@ -174,5 +186,23 @@ class PaymentService
                 $payment->verified_by
             ));
         }
+    }
+    
+    private function checkAndEmitGovernmentEvent(Invoice $invoice, Payment $payment): void
+    {
+        if ($invoice->invoice_type !== InvoiceType::GOVERNMENT) {
+            return;
+        }
+
+        if ($invoice->status !== InvoiceStatus::PAID) {
+            return;
+        }
+
+        event(new \App\Modules\Payments\Events\GovernmentInvoicePaid(
+            $invoice->project_id,
+            $invoice->id,
+            $payment->id,
+            $payment->verified_by
+        ));
     }
 }

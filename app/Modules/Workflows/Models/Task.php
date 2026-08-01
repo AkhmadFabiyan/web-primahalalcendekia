@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
 {
-    use HasUuids, HasFactory;
+    use HasUuids, HasFactory, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
     protected $guarded = [];
 

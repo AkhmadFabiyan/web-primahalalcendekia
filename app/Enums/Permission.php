@@ -45,4 +45,9 @@ enum Permission: string
     case ManageSettings = 'settings.manage';
 
     case ViewReports = 'reports.view';
+
+    case ViewArchives = 'archives.view';
+    case DownloadInternalArchives = 'archives.download_internal';
+    case DownloadClientArchives = 'archives.download_client';
+    case GenerateArchives = 'archives.generate';
 }

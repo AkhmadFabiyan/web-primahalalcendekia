@@ -9,4 +9,5 @@ enum TaskStatus: string
     case WAITING_REVIEW = 'WAITING_REVIEW';
     case REVISION = 'REVISION';
     case COMPLETED = 'COMPLETED';
+    case CANCELLED = 'CANCELLED';
 }

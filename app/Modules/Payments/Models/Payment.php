@@ -17,7 +17,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Payment extends Model implements HasMedia
 {
-    use HasUuids, HasFactory, SoftDeletes, LogsActivity, InteractsWithMedia;
+    use HasUuids, HasFactory, SoftDeletes, LogsActivity, InteractsWithMedia, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
+
+    public function getProjectForLock()
+    {
+        return $this->invoice?->project;
+    }
 
     protected $fillable = [
         'invoice_id',

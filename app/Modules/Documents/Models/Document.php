@@ -14,7 +14,7 @@ use Spatie\MediaLibrary\InteractsWithMedia;
 
 class Document extends Model implements HasMedia
 {
-    use HasUuids, SoftDeletes, InteractsWithMedia;
+    use HasUuids, SoftDeletes, InteractsWithMedia, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
     protected $fillable = [
         'project_id',

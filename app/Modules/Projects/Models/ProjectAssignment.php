@@ -11,7 +11,7 @@ use App\Modules\Projects\Enums\AssignmentRole;
 
 class ProjectAssignment extends Model
 {
-    use HasUuids, HasFactory;
+    use HasUuids, HasFactory, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
     protected $guarded = [];
 

@@ -157,11 +157,16 @@ class RolePermissionSeeder extends Seeder
             $permissions[PermissionEnum::UploadDocuments->value],
             $permissions[PermissionEnum::UpdatePostAudit->value],
             $permissions[PermissionEnum::UploadCertificates->value],
+            $permissions[PermissionEnum::ViewArchives->value],
+            $permissions[PermissionEnum::DownloadInternalArchives->value],
+            $permissions[PermissionEnum::GenerateArchives->value],
         ]);
 
         // Klien
         $roles[RoleEnum::KLIEN->value]->syncPermissions([
             $permissions[PermissionEnum::ViewDashboard->value],
+            $permissions[PermissionEnum::ViewArchives->value],
+            $permissions[PermissionEnum::DownloadClientArchives->value],
         ]);
 
         // Bersihkan cache setelah mapping

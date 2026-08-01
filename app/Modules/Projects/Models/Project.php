@@ -18,7 +18,7 @@ use App\Modules\Leads\Enums\PaymentScheme;
 
 class Project extends Model
 {
-    use HasUuids, HasFactory, SoftDeletes, LogsActivity;
+    use HasUuids, HasFactory, SoftDeletes, LogsActivity, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
     protected $guarded = [];
 
@@ -77,5 +77,45 @@ class Project extends Model
     public function auditPlan(): HasOne
     {
         return $this->hasOne(\App\Modules\Workflows\Models\AuditPlan::class);
+    }
+
+    public function certificate(): HasOne
+    {
+        return $this->hasOne(Certificate::class);
+    }
+
+    public function paymentSchedules(): HasMany
+    {
+        return $this->hasMany(ProjectPaymentSchedule::class);
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(\App\Modules\Payments\Models\Invoice::class);
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'cancelled_by');
+    }
+
+    public function isLocked(): bool
+    {
+        return in_array($this->status, [ProjectStatus::COMPLETED, ProjectStatus::CANCELLED]);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(\App\Modules\Workflows\Models\Task::class);
+    }
+
+    public function archives(): HasMany
+    {
+        return $this->hasMany(ProjectArchive::class);
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(\App\Modules\Documents\Models\Document::class);
     }
 }
