@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 use App\Modules\Clients\Models\Client;
@@ -61,5 +62,20 @@ class Project extends Model
     public function assignments(): HasMany
     {
         return $this->hasMany(ProjectAssignment::class);
+    }
+
+    public function projectDocumentRequirements(): HasMany
+    {
+        return $this->hasMany(\App\Modules\Documents\Models\ProjectDocumentRequirement::class);
+    }
+
+    public function sihalalCredential(): HasOne
+    {
+        return $this->hasOne(SihalalCredential::class);
+    }
+
+    public function auditPlan(): HasOne
+    {
+        return $this->hasOne(\App\Modules\Workflows\Models\AuditPlan::class);
     }
 }

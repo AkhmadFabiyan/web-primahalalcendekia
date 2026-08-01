@@ -21,6 +21,7 @@ class ProjectAssignment extends Model
             'assignment_role' => AssignmentRole::class,
             'assigned_at' => 'datetime',
             'ended_at' => 'datetime',
+            'is_primary' => 'boolean',
         ];
     }
 

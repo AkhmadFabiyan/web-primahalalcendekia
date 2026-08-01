@@ -101,8 +101,56 @@ class AssignmentService
                 $this->taskService->ensureInitialOperationalTask($project, $newUser);
             }
 
+            if (in_array($project->status->value, [\App\Modules\Projects\Enums\ProjectStatus::ACTIVE->value, \App\Modules\Projects\Enums\ProjectStatus::OPERATIONAL->value]) && $role === AssignmentRole::PENDAMPING_AUDITOR) {
+                app(\App\Modules\Workflows\Services\AuditPlanningService::class)->ensureAuditPlanningTask($project);
+            }
+
             // TODO: Tulis Activity Log
             // TODO: Kirim Notifikasi
+        });
+    }
+
+    public function assignAuditor(Project $project, User $auditorUser, bool $isPrimary = false, ?string $reason = null): void
+    {
+        DB::transaction(function () use ($project, $auditorUser, $isPrimary, $reason) {
+            $project = Project::lockForUpdate()->find($project->id);
+            $now = now();
+            $actorId = auth()->id();
+
+            // Cek apakah sudah ditugaskan sebelumnya
+            $existingAssignment = ProjectAssignment::where('project_id', $project->id)
+                ->where('assignment_role', AssignmentRole::AUDITOR->value)
+                ->where('user_id', $auditorUser->id)
+                ->whereNull('ended_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingAssignment) {
+                if ($isPrimary && !$existingAssignment->is_primary) {
+                    ProjectAssignment::where('project_id', $project->id)
+                        ->where('assignment_role', AssignmentRole::AUDITOR->value)
+                        ->update(['is_primary' => false]);
+
+                    $existingAssignment->is_primary = true;
+                    $existingAssignment->save();
+                }
+                return;
+            }
+
+            if ($isPrimary) {
+                ProjectAssignment::where('project_id', $project->id)
+                    ->where('assignment_role', AssignmentRole::AUDITOR->value)
+                    ->update(['is_primary' => false]);
+            }
+
+            ProjectAssignment::create([
+                'project_id' => $project->id,
+                'user_id' => $auditorUser->id,
+                'assignment_role' => AssignmentRole::AUDITOR->value,
+                'assigned_by' => $actorId,
+                'assigned_at' => $now,
+                'is_primary' => $isPrimary,
+            ]);
         });
     }
 }

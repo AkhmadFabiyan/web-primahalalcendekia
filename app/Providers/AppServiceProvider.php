@@ -20,5 +20,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         \Illuminate\Support\Facades\Event::subscribe(\App\Listeners\AuthEventSubscriber::class);
+        \Illuminate\Support\Facades\Event::listen(
+            \App\Events\WorkflowACompleted::class,
+            \App\Listeners\NotifyCompanionOnWorkflowACompleted::class,
+        );
     }
 }

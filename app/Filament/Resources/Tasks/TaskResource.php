@@ -78,8 +78,29 @@ class TaskResource extends Resource
                     ->options(TaskStatus::class),
             ])
             ->actions([
+                Tables\Actions\Action::make('bukaProject')
+                    ->label('Buka Project')
+                    ->icon('heroicon-o-folder-open')
+                    ->url(fn (Task $record) => \App\Filament\Resources\Clients\ClientResource::getUrl('view', ['record' => $record->project->client_id]))
+                    ->openUrlInNewTab(),
+                Tables\Actions\Action::make('kerjakan')
+                    ->label('Kerjakan')
+                    ->icon('heroicon-o-play')
+                    ->color('primary')
+                    ->visible(fn (Task $record) => $record->status === TaskStatus::TODO && $record->assigned_to === auth()->id())
+                    ->action(function (Task $record) {
+                        try {
+                            if ($record->task_type === \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW) {
+                                app(\App\Modules\Workflows\Services\SpvEntryWorkflowService::class)->startReview($record, auth()->user());
+                            } else {
+                                app(\App\Modules\Workflows\Services\EntryWorkflowService::class)->startEntry($record, auth()->user());
+                            }
+                            \Filament\Notifications\Notification::make()->title('Tugas dimulai')->success()->send();
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()->title('Gagal memulai')->body($e->getMessage())->danger()->send();
+                        }
+                    }),
                 Tables\Actions\ViewAction::make(),
-                // TBD: Action Kerjakan, Buka Project
             ])
             ->bulkActions([
                 // No bulk actions

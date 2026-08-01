@@ -94,6 +94,16 @@ class ProjectActivationService
                 $this->taskService->ensureInitialOperationalTask($project, clone $adminAssignment->user);
             }
 
+            // Check if Pendamping is assigned
+            $pendampingAssignment = ProjectAssignment::where('project_id', $project->id)
+                ->where('assignment_role', AssignmentRole::PENDAMPING_AUDITOR->value)
+                ->whereNull('ended_at')
+                ->first();
+
+            if ($pendampingAssignment) {
+                app(\App\Modules\Workflows\Services\AuditPlanningService::class)->ensureAuditPlanningTask($project);
+            }
+
             // Spatie Activity Log specifically configured
             activity()
                 ->performedOn($project)

@@ -48,4 +48,28 @@ class Task extends Model
     {
         return $this->hasMany(TaskAssignmentHistory::class);
     }
+
+    public function workflowNotes(): HasMany
+    {
+        return $this->hasMany(WorkflowNote::class);
+    }
+
+    public function checklistItems(): HasMany
+    {
+        return $this->hasMany(TaskChecklistItem::class);
+    }
+    public function parentTask(): BelongsTo
+    {
+        return $this->belongsTo(Task::class, 'parent_task_id');
+    }
+
+    public function subTasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'parent_task_id');
+    }
+
+    public function sourceWorkflowHistory(): BelongsTo
+    {
+        return $this->belongsTo(WorkflowHistory::class, 'source_workflow_history_id');
+    }
 }
