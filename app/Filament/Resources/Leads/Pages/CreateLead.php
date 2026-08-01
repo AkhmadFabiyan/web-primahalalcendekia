@@ -15,4 +15,10 @@ class CreateLead extends CreateRecord
         $data['status'] = LeadStatus::DRAFT->value;
         return $data;
     }
+
+    protected function getCreateFormAction(): \Filament\Actions\Action
+    {
+        return parent::getCreateFormAction()->keyBindings(['command+s', 'ctrl+s']);
+    }
 }
+

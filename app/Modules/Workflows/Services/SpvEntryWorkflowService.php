@@ -159,9 +159,9 @@ class SpvEntryWorkflowService
                 ->performedOn($spvTask)
                 ->causedBy($actor)
                 ->event('approved')
-                ->log("Menyetujui hasil Entry SIHALAL");
-                
-            // After commit, we will dispatch WorkflowACompleted and send notifications
+                ->log("Menyetujui Hasil Entry SIHALAL");
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($spvTask);
         });
         
         event(new \App\Events\WorkflowACompleted($spvTask->project_id));
@@ -227,6 +227,10 @@ class SpvEntryWorkflowService
 
             $entryTask->status = TaskStatus::REVISION;
             $entryTask->save();
+
+            $slaManager = app(\App\Modules\Workflows\Services\SlaManagerService::class);
+            $slaManager->completeCycle($spvTask);
+            $slaManager->newCycle($entryTask);
 
             activity()
                 ->performedOn($spvTask)

@@ -82,6 +82,11 @@ class Invoice extends Model implements HasMedia
         return $this->hasMany(Payment::class);
     }
 
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(Receipt::class);
+    }
+
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('government-invoice-document')

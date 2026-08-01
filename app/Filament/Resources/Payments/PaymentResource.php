@@ -24,6 +24,9 @@ use Filament\Infolists\Components\Section;
 class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
+    protected static bool $isGloballySearchable = true;
+    protected static ?string $recordTitleAttribute = 'payment_number';
+    protected static int $globalSearchResultsLimit = 10;
 
     protected static ?string $slug = 'payments/transactions';
 
@@ -40,6 +43,44 @@ class PaymentResource extends Resource
     public static function canEdit(Model $record): bool
     {
         return false;
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['payment_number', 'reference_number', 'invoice.invoice_number', 'invoice.project.client.business_id'];
+    }
+
+    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return $record->payment_number ?? 'Pembayaran';
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Invoice' => $record->invoice?->invoice_number ?? '-',
+            'Nominal' => 'Rp ' . number_format($record->amount, 2, ',', '.'),
+            'Status' => $record->status?->value ?? '-',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return PaymentResource::getUrl('index'); // We don't have a view page for payment
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        $query = parent::getGlobalSearchEloquentQuery()->with(['invoice.project.client']);
+
+        $user = auth()->user();
+        if ($user && $user->hasRole(\App\Enums\Role::KLIEN->value) && $user->client_id) {
+            $query->whereHas('invoice.project', function ($q) use ($user) {
+                $q->where('client_id', $user->client_id);
+            });
+        }
+
+        return $query;
     }
 
     public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
@@ -116,7 +157,8 @@ class PaymentResource extends Resource
                     ->money('IDR')
                     ->sortable(),
                 TextColumn::make('payment_method')
-                    ->label('Metode'),
+                    ->label('Metode')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('payment_date')
                     ->label('Payment Date')
                     ->date()
@@ -125,12 +167,30 @@ class PaymentResource extends Resource
                     ->label('Status')
                     ->badge(),
                 TextColumn::make('verifier.name')
-                    ->label('Verified By'),
+                    ->label('Verified By')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('downloadReceipt')
+                    ->label('Unduh Kwitansi')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->visible(fn (\App\Modules\Payments\Models\Payment $record) => $record->status === \App\Modules\Payments\Enums\PaymentStatus::VERIFIED && $record->receipt)
+                    ->action(function (\App\Modules\Payments\Models\Payment $record) {
+                        $pdfService = app(\App\Modules\Payments\Services\ReceiptPdfService::class);
+                        $path = $pdfService->generate($record->receipt);
+                        
+                        activity()
+                            ->causedBy(auth()->user())
+                            ->performedOn($record->receipt)
+                            ->event('downloaded')
+                            ->log('PAYMENT_RECEIPT_ISSUED');
+
+                        return response()->download(storage_path('app/private/' . $path));
+                    }),
                 ViewAction::make()->slideOver(),
 
                 Action::make('verify')
@@ -193,7 +253,11 @@ class PaymentResource extends Resource
             ])
             ->bulkActions([
                 // Disable bulk actions
-            ]);
+            ])
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function getPages(): array

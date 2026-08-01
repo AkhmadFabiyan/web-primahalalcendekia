@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Http\Request;
+use Illuminate\Cache\RateLimiting\Limit;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -19,6 +22,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('api-read', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('api-write', function (Request $request) {
+            return Limit::perMinute(10)->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('api-auth', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip());
+        });
         \Illuminate\Support\Facades\Event::subscribe(\App\Listeners\AuthEventSubscriber::class);
         \Illuminate\Support\Facades\Event::listen(
             \App\Events\WorkflowACompleted::class,
@@ -43,3 +57,4 @@ class AppServiceProvider extends ServiceProvider
         \App\Modules\Workflows\Models\Task::observe(\App\Observers\ReportCacheObserver::class);
     }
 }
+

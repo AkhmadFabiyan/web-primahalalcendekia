@@ -105,7 +105,11 @@ class ActivityLogResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
             ])
-            ->bulkActions([]);
+            ->bulkActions([])
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function infolist(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
@@ -177,3 +181,4 @@ class ActivityLogResource extends Resource
         ];
     }
 }
+

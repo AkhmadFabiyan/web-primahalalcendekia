@@ -2,12 +2,16 @@
 
 namespace App\Filament\Resources\Partners\Pages;
 
+use App\Traits\RecordsRecentlyViewed;
+
 use App\Filament\Resources\Partners\PartnerResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 
 class ViewPartner extends ViewRecord
 {
+    use RecordsRecentlyViewed;
+
     protected static string $resource = PartnerResource::class;
 
     protected function getHeaderActions(): array
@@ -17,3 +21,4 @@ class ViewPartner extends ViewRecord
         ];
     }
 }
+

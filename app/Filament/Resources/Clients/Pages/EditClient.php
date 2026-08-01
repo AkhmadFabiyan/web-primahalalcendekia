@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Clients\Pages;
 
+use App\Traits\RecordsRecentlyViewed;
+
 use App\Filament\Resources\Clients\ClientResource;
 use App\Modules\Clients\Services\ClientAccountService;
 use Filament\Actions;
@@ -11,6 +13,8 @@ use App\Enums\Role;
 
 class EditClient extends EditRecord
 {
+    use RecordsRecentlyViewed;
+
     protected static string $resource = ClientResource::class;
 
     protected function getHeaderActions(): array
@@ -46,4 +50,11 @@ class EditClient extends EditRecord
             Actions\ViewAction::make(),
         ];
     }
+
+    protected function getSaveFormAction(): \Filament\Actions\Action
+    {
+        return parent::getSaveFormAction()->keyBindings(['command+s', 'ctrl+s']);
+    }
 }
+
+

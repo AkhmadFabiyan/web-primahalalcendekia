@@ -12,10 +12,14 @@ use App\Modules\Payments\Events\ActivationBillingGroupPaid;
 use Illuminate\Support\Facades\DB;
 use Exception;
 
+use App\Modules\Payments\Models\Receipt;
+use App\Modules\Payments\Enums\ReceiptType;
+
 class PaymentService
 {
     public function __construct(
-        private readonly PaymentSequenceService $sequenceService
+        private readonly PaymentSequenceService $sequenceService,
+        private readonly ReceiptSequenceService $receiptSequenceService
     ) {}
 
     /**
@@ -108,6 +112,36 @@ class PaymentService
 
             $lockedInvoice->status = $newInvoiceStatus;
             $lockedInvoice->save();
+
+            // Generate Payment Receipt
+            Receipt::create([
+                'receipt_number' => $this->receiptSequenceService->generateNextNumber(),
+                'invoice_id' => $lockedInvoice->id,
+                'payment_id' => $lockedPayment->id,
+                'receipt_type' => ReceiptType::PAYMENT_RECEIPT,
+                'amount' => $lockedPayment->amount,
+                'issued_at' => now(),
+                'issued_by' => auth()->id(),
+            ]);
+
+            // Generate Settlement Receipt if PAID (one per invoice)
+            if ($newInvoiceStatus === InvoiceStatus::PAID) {
+                $exists = Receipt::where('invoice_id', $lockedInvoice->id)
+                    ->where('receipt_type', ReceiptType::SETTLEMENT_RECEIPT)
+                    ->exists();
+
+                if (!$exists) {
+                    Receipt::create([
+                        'receipt_number' => $this->receiptSequenceService->generateNextNumber(),
+                        'invoice_id' => $lockedInvoice->id,
+                        'payment_id' => null,
+                        'receipt_type' => ReceiptType::SETTLEMENT_RECEIPT,
+                        'amount' => $lockedInvoice->total,
+                        'issued_at' => now(),
+                        'issued_by' => auth()->id(),
+                    ]);
+                }
+            }
             
             $this->checkAndEmitActivationEvent($lockedInvoice, $lockedPayment);
             $this->checkAndEmitGovernmentEvent($lockedInvoice, $lockedPayment);

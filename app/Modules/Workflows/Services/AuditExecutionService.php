@@ -415,6 +415,8 @@ class AuditExecutionService
             $task->status = TaskStatus::WAITING_REVIEW;
             $task->save();
 
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($task);
+
             $auditorTaskKey = "PROJECT-{$project->id}:AUDITOR_REVIEW:{$history->id}";
             $auditorTask = Task::firstOrCreate(
                 ['project_id' => $project->id, 'task_key' => $auditorTaskKey],
@@ -430,6 +432,8 @@ class AuditExecutionService
                     'entered_at' => now(),
                 ]
             );
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($auditorTask);
 
             \App\Modules\Workflows\Models\WorkflowReview::create([
                 'id' => \Illuminate\Support\Str::uuid(),

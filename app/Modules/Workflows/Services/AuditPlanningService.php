@@ -41,7 +41,7 @@ class AuditPlanningService
             }
 
             $taskKey = "PROJECT-{$project->id}:AUDIT_PLANNING";
-            Task::firstOrCreate(
+            $task = Task::firstOrCreate(
                 ['project_id' => $project->id, 'task_key' => $taskKey],
                 [
                     'assigned_to' => $assignment->user_id,
@@ -53,6 +53,8 @@ class AuditPlanningService
                     'entered_at' => now(),
                 ]
             );
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($task);
         });
     }
 
@@ -298,7 +300,7 @@ class AuditPlanningService
 
             // Create Execution Task
             $executionTaskKey = "PROJECT-{$project->id}:AUDIT_EXECUTION";
-            Task::firstOrCreate(
+            $executionTask = Task::firstOrCreate(
                 ['project_id' => $project->id, 'task_key' => $executionTaskKey],
                 [
                     'assigned_to' => $actor->id,
@@ -311,6 +313,8 @@ class AuditPlanningService
                     'deadline' => $plan->scheduled_start_at,
                 ]
             );
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($executionTask);
 
             // Notify Auditors (prepare list)
             $auditors = ProjectAssignment::where('project_id', $project->id)

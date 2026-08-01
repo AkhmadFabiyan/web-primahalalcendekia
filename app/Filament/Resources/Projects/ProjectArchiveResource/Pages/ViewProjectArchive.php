@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Projects\ProjectArchiveResource\Pages;
 
+use App\Traits\RecordsRecentlyViewed;
+
 use App\Filament\Resources\Projects\ProjectArchiveResource;
 use App\Modules\Projects\Enums\ArchiveVisibility;
 use App\Modules\Projects\Enums\ProjectArchiveStatus;
@@ -11,6 +13,8 @@ use Filament\Resources\Pages\ViewRecord;
 
 class ViewProjectArchive extends ViewRecord
 {
+    use RecordsRecentlyViewed;
+
     protected static string $resource = ProjectArchiveResource::class;
 
     protected function getHeaderActions(): array
@@ -61,3 +65,4 @@ class ViewProjectArchive extends ViewRecord
         ];
     }
 }
+

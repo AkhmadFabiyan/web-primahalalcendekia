@@ -143,6 +143,8 @@ class ProjectHandoverService
                     'entered_at' => $now,
                     'reason' => 'Handoff dari Admin ke Entry',
                 ]);
+
+                app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($task);
             }
 
             // Log activity

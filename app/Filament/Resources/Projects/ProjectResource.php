@@ -65,7 +65,11 @@ class ProjectResource extends Resource
             ->recordUrl(fn (Project $record): string => route('filament.admin.resources.clients.view', ['record' => $record->client_id]))
             ->bulkActions([
                 //
-            ]);
+            ])
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function getRelations(): array
@@ -82,3 +86,4 @@ class ProjectResource extends Resource
         ];
     }
 }
+

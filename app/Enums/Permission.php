@@ -54,4 +54,7 @@ enum Permission: string
     case DownloadInternalArchives = 'archives.download_internal';
     case DownloadClientArchives = 'archives.download_client';
     case GenerateArchives = 'archives.generate';
+
+    case ViewFinancialSettings = 'financial-settings.view';
+    case UpdateFinancialSettings = 'financial-settings.update';
 }

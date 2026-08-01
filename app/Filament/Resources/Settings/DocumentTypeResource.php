@@ -102,7 +102,11 @@ class DocumentTypeResource extends Resource
             ])
             ->bulkActions([
                 // No bulk actions based on rules (no delete)
-            ]);
+            ])
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function getPages(): array
@@ -112,3 +116,4 @@ class DocumentTypeResource extends Resource
         ];
     }
 }
+

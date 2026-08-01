@@ -279,6 +279,8 @@ class EntryWorkflowService
             $task->status = TaskStatus::WAITING_REVIEW;
             $task->save();
 
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($task);
+
             // Buat Task SPV Entry secara idempotent
             $taskKey = "PROJECT-{$project->id}:SPV_ENTRY_REVIEW:{$history->id}";
             $spvTask = Task::firstOrCreate(
@@ -291,11 +293,12 @@ class EntryWorkflowService
                     'status' => TaskStatus::TODO,
                     'priority' => $task->priority,
                     'entered_at' => now(),
-                    'deadline' => $task->deadline,
                     'parent_task_id' => $task->id,
                     'source_workflow_history_id' => $history->id,
                 ]
             );
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($spvTask);
 
             // Buat WorkflowReview
             \App\Modules\Workflows\Models\WorkflowReview::firstOrCreate(

@@ -96,4 +96,9 @@ class Payment extends Model implements HasMedia
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }
+
+    public function receipt(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Receipt::class);
+    }
 }

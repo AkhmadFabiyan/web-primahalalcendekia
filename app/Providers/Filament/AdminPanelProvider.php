@@ -65,6 +65,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('30s')
+            ->globalSearchResourceOptIn()
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
+            ->globalSearchFieldKeyBindingSuffix()
+            ->globalSearchDebounce('750ms')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Clients\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use App\Filament\Exports\Clients\ClientExporter;
+use Filament\Actions\ExportAction;
 
 class ListClients extends ListRecords
 {
@@ -12,6 +14,9 @@ class ListClients extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [];
+        return [
+            ExportAction::make()
+                ->exporter(ClientExporter::class),
+        ];
     }
 }

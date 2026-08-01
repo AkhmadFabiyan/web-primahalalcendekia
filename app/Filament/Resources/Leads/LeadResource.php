@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 class LeadResource extends Resource
 {
     protected static ?string $model = Lead::class;
+    protected static bool $isGloballySearchable = true;
+    protected static ?string $recordTitleAttribute = 'company_name';
+    protected static int $globalSearchResultsLimit = 10;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-users';
 
@@ -25,6 +28,35 @@ class LeadResource extends Resource
     
     protected static ?int $navigationSort = 1;
 
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['company_name', 'pic_name', 'pic_email', 'pic_phone', 'partner.name'];
+    }
+
+    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return $record->company_name;
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'PIC' => $record->pic_name,
+            'Status' => $record->status?->value ?? '-',
+            'Marketing' => $record->marketing?->name ?? '-',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return LeadResource::getUrl('view', ['record' => $record]);
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['partner', 'marketing']);
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->schema(LeadForm::schema());
@@ -32,7 +64,11 @@ class LeadResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return LeadsTable::configure($table);
+        return LeadsTable::configure($table)
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function getRelations(): array

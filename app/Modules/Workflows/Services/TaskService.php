@@ -13,10 +13,6 @@ use App\Modules\Workflows\Models\TaskAssignmentHistory;
 
 class TaskService
 {
-    /**
-     * Ensure the initial operational task for the Admin is created.
-     * This is idempotent based on task_key.
-     */
     public function ensureInitialOperationalTask(Project $project, User $admin): ?Task
     {
         $taskKey = "PROJECT-{$project->id}:INITIAL_DOCUMENT_COMPLETION";
@@ -50,6 +46,8 @@ class TaskService
             'reason' => 'Task awal dibuat otomatis',
         ]);
 
+        app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($task);
+
         return $task;
     }
 
@@ -73,6 +71,8 @@ class TaskService
                 ->causedBy($actor)
                 ->event('completed')
                 ->log($reason);
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($task);
         }
     }
 }

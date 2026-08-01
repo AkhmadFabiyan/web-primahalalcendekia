@@ -42,6 +42,7 @@ class RolePermissionSeeder extends Seeder
         // Super Admin: Semua permission yang tersedia
         $roles[RoleEnum::SUPER_ADMIN->value]->syncPermissions(Permission::all());
 
+
         // Direktur
         $roles[RoleEnum::DIREKTUR->value]->syncPermissions([
             $permissions[PermissionEnum::ViewDashboard->value],

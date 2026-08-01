@@ -29,7 +29,11 @@ class PartnerResource extends Resource
             ->columns(Tables\PartnersTable::columns())
             ->filters(Tables\PartnersTable::filters())
             ->recordActions(Tables\PartnersTable::actions())
-            ->toolbarActions(Tables\PartnersTable::bulkActions());
+            ->toolbarActions(Tables\PartnersTable::bulkActions()
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession());
     }
 
     public static function getRelations(): array
@@ -46,3 +50,4 @@ class PartnerResource extends Resource
         ];
     }
 }
+

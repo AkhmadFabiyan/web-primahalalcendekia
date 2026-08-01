@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: PHC Public API
+  description: Public API documentation for Prima Halal Cendekia System
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Current API version (V1)
+paths:
+  /leads:
+    post:
+      summary: Create a new lead
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - source_system
+                - external_reference
+                - company_name
+                - pic_name
+                - pic_phone
+                - pic_email
+                - type
+                - marketing_email
+              properties:
+                source_system:
+                  type: string
+                external_reference:
+                  type: string
+                company_name:
+                  type: string
+                pic_name:
+                  type: string
+                pic_phone:
+                  type: string
+                pic_email:
+                  type: string
+                  format: email
+                type:
+                  type: string
+                  enum: [DIRECT, PARTNER]
+                marketing_email:
+                  type: string
+                  format: email
+      responses:
+        '201':
+          description: Created
+  /leads/{externalReference}:
+    get:
+      summary: Get lead by external reference
+      parameters:
+        - name: externalReference
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /clients/{clientId}:
+    get:
+      summary: Get client details
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /clients/{clientId}/progress:
+    get:
+      summary: Get client progress
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /invoices:
+    get:
+      summary: List invoices
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /invoices/{invoiceNumber}:
+    get:
+      summary: Get invoice by number
+      parameters:
+        - name: invoiceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /payments:
+    get:
+      summary: List payments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+  /payments/{paymentNumber}:
+    get:
+      summary: Get payment by number
+      parameters:
+        - name: paymentNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Clients\Pages;
 
+use App\Traits\RecordsRecentlyViewed;
+
 use App\Filament\Resources\Clients\ClientResource;
 use App\Modules\Clients\Services\ClientAccountService;
 use Filament\Actions;
@@ -11,6 +13,8 @@ use App\Enums\Role;
 
 class ViewClient extends ViewRecord
 {
+    use RecordsRecentlyViewed;
+
     protected static string $resource = ClientResource::class;
 
     protected function getHeaderActions(): array
@@ -47,3 +51,4 @@ class ViewClient extends ViewRecord
         ];
     }
 }
+

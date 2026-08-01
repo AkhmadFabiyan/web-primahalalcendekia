@@ -29,6 +29,9 @@ use Illuminate\Database\Eloquent\Builder;
 class InvoiceResource extends Resource
 {
     protected static ?string $model = Invoice::class;
+    protected static bool $isGloballySearchable = true;
+    protected static ?string $recordTitleAttribute = 'invoice_number';
+    protected static int $globalSearchResultsLimit = 10;
     
     // Custom slug as requested in ui/invoice.md
     protected static ?string $slug = 'payments/invoices';
@@ -42,6 +45,44 @@ class InvoiceResource extends Resource
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['invoice_number', 'project.client.business_id', 'project.client.company_name', 'billing_group_id'];
+    }
+
+    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return $record->invoice_number ?? 'Draft Invoice';
+    }
+
+    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    {
+        return [
+            'Client' => $record->project?->client?->company_name ?? '-',
+            'Total' => 'Rp ' . number_format($record->total, 2, ',', '.'),
+            'Status' => $record->status?->value ?? '-',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    {
+        return InvoiceResource::getUrl('index'); // We don't have a view page for invoice yet, maybe just manage page
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        $query = parent::getGlobalSearchEloquentQuery()->with(['project.client']);
+
+        $user = auth()->user();
+        if ($user && $user->hasRole(\App\Enums\Role::KLIEN->value) && $user->client_id) {
+            $query->whereHas('project', function ($q) use ($user) {
+                $q->where('client_id', $user->client_id);
+            })->where('audience', \App\Modules\Payments\Enums\InvoiceAudience::CLIENT);
+        }
+
+        return $query;
     }
 
     public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
@@ -85,10 +126,12 @@ class InvoiceResource extends Resource
                     ->badge(),
                 TextColumn::make('audience')
                     ->label('Audience')
-                    ->badge(),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('invoice_type')
                     ->label('Jenis')
-                    ->badge(),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('total')
                     ->label('Total Tagihan')
                     ->money('IDR')
@@ -105,6 +148,22 @@ class InvoiceResource extends Resource
                 //
             ])
             ->actions([
+                Tables\Actions\Action::make('downloadPdf')
+                    ->label('Unduh PDF')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(function (Invoice $record) {
+                        $pdfService = app(\App\Modules\Payments\Services\InvoicePdfService::class);
+                        $path = $pdfService->generate($record);
+                        
+                        activity()
+                            ->causedBy(auth()->user())
+                            ->performedOn($record)
+                            ->event('downloaded')
+                            ->log('INVOICE_PDF_ISSUED');
+
+                        return response()->download(storage_path('app/private/' . $path));
+                    }),
                 ViewAction::make()->slideOver(),
                 EditAction::make()
                     ->modalWidth(MaxWidth::Medium)
@@ -266,7 +325,11 @@ class InvoiceResource extends Resource
             ])
             ->bulkActions([
                 // Disable bulk actions
-            ]);
+            ])
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistColumnSearchesInSession()
+            ->persistSortInSession();
     }
 
     public static function getPages(): array

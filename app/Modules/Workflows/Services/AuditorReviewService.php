@@ -112,6 +112,8 @@ class AuditorReviewService
                 ->causedBy($actor)
                 ->event('approved')
                 ->log("Menyetujui hasil Pelaksanaan Audit");
+
+            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($auditorTask);
         });
     }
 
@@ -220,6 +222,10 @@ class AuditorReviewService
 
             $entryTask->status = TaskStatus::IN_PROGRESS;
             $entryTask->save();
+
+            $slaManager = app(\App\Modules\Workflows\Services\SlaManagerService::class);
+            $slaManager->completeCycle($auditorTask);
+            $slaManager->newCycle($entryTask);
 
             $execution = \App\Modules\Workflows\Models\AuditExecution::where('task_id', $entryTask->id)->lockForUpdate()->firstOrFail();
             $execution->submitted_at = null;
