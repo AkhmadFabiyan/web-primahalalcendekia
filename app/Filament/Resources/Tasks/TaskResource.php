@@ -27,14 +27,12 @@ class TaskResource extends Resource
         /** @var \App\Models\User */
         $user = auth()->user();
 
-        $query = static::getModel()::query()->where('status', '!=', TaskStatus::COMPLETED->value);
+        // If user is super admin or manajerial, we might show a different count or just their own.
+        // For Phase 30, we use PersonalWorkloadService for consistency.
+        $service = app(\App\Modules\Workflows\Services\PersonalWorkloadService::class);
+        $count = $service->getActiveTasksCount($user);
 
-        // Only count user's own tasks unless they are manajerial
-        if (!$user->hasRole(['Super Admin', 'Manager Operasional'])) {
-            $query->where('assigned_to', $user->id);
-        }
-
-        return (string) $query->count();
+        return $count > 0 ? (string) $count : null;
     }
 
     public static function table(Table $table): Table
