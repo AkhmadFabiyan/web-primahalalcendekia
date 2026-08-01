@@ -63,6 +63,35 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasRole(\App\Enums\Role::SUPER_ADMIN->value);
     }
 
+    public function projects()
+    {
+        return $this->belongsToMany(Project::class, 'project_assignments');
+    }
+
+    /**
+     * Get the entity's notifications.
+     */
+    public function notifications(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(\App\Modules\Notifications\Models\DatabaseNotification::class, 'notifiable')->latest();
+    }
+
+    /**
+     * Get the entity's read notifications.
+     */
+    public function readNotifications(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->notifications()->whereNotNull('read_at');
+    }
+
+    /**
+     * Get the entity's unread notifications.
+     */
+    public function unreadNotifications(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->notifications()->whereNull('read_at');
+    }
+
     public function client()
     {
         return $this->belongsTo(\App\Modules\Clients\Models\Client::class);

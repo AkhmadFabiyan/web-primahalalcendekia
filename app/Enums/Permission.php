@@ -5,6 +5,7 @@ namespace App\Enums;
 enum Permission: string
 {
     case ViewDashboard = 'dashboard.view';
+    case ViewLogs = 'logs.view';
 
     case ViewLeads = 'leads.view';
     case CreateLeads = 'leads.create';

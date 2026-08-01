@@ -7,7 +7,8 @@ use App\Modules\Projects\Enums\AssignmentRole;
 use App\Modules\Projects\Models\Project;
 use App\Modules\Workflows\Enums\WorkflowStatus;
 use App\Modules\Workflows\Models\WorkflowStep;
-use Filament\Notifications\Notification;
+use App\Modules\Notifications\Enums\NotificationEvent;
+use App\Modules\Notifications\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 
@@ -16,10 +17,9 @@ class NotifyCompanionOnWorkflowACompleted
     /**
      * Create the event listener.
      */
-    public function __construct()
-    {
-        //
-    }
+    public function __construct(
+        protected NotificationService $notificationService
+    ) {}
 
     /**
      * Handle the event.
@@ -40,19 +40,16 @@ class NotifyCompanionOnWorkflowACompleted
             ->where('step_code', 'COMPANION_PROGRESS')
             ->first();
 
-        // Need to check audit tracker
-        $auditTracker = WorkflowStep::where('project_id', $project->id)
-            ->where('step_code', 'AUDITOR_PROGRESS')
-            ->first();
-
         if ($assignment && $assignment->user && $companionTracker) {
             if ($companionTracker->status === WorkflowStatus::COMPANION_NOT_PROCESSED) {
                 // Notifikasi ke Pendamping
-                Notification::make()
-                    ->title('Workflow Entry Selesai')
-                    ->body("Workflow Entry {$project->project_name} telah selesai. Project siap ditindaklanjuti pada proses audit.")
-                    ->info()
-                    ->sendToDatabase($assignment->user);
+                $this->notificationService->send(
+                    recipient: $assignment->user,
+                    event: NotificationEvent::ENTRY_APPROVED,
+                    title: 'Workflow Entry Selesai',
+                    message: "Workflow Entry {$project->project_name} telah selesai. Project siap ditindaklanjuti pada proses audit.",
+                    project: $project
+                );
             }
         }
     }

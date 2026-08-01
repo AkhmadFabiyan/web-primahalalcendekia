@@ -33,6 +33,7 @@ class ProjectCompletionService
                 return;
             }
 
+            $oldStatus = $project->getOriginal('status');
             // Lolos semua, tandai Project COMPLETED
             $project->update([
                 'status' => ProjectStatus::COMPLETED,
@@ -43,8 +44,20 @@ class ProjectCompletionService
             app(ProjectArchiveManifestService::class)->generate($project);
 
             activity()
+                ->useLog('projects')
                 ->performedOn($project)
-                ->event('project_completed')
+                ->event('completed')
+                ->tap(function ($activity) use ($project) {
+                    $activity->project_id = $project->id;
+                    $activity->is_client_visible = true;
+                })
+                ->withProperties([
+                    'old' => ['status' => $oldStatus instanceof ProjectStatus ? $oldStatus->value : $oldStatus],
+                    'attributes' => ['status' => ProjectStatus::COMPLETED->value],
+                    'context' => [
+                        'source' => 'project_completion_service'
+                    ]
+                ])
                 ->log("Seluruh kewajiban operasional dan finansial Project telah selesai. Status menjadi Selesai.");
         });
     }

@@ -82,9 +82,22 @@ class ProjectCancellationService
 
             // D. Activity Log
             activity()
+                ->useLog('projects')
                 ->causedBy($actor)
                 ->performedOn($project)
-                ->event('project_cancelled')
+                ->event('cancelled')
+                ->tap(function ($activity) use ($project) {
+                    $activity->project_id = $project->id;
+                    $activity->is_client_visible = false;
+                })
+                ->withProperties([
+                    'old' => ['status' => $oldStatus],
+                    'attributes' => ['status' => ProjectStatus::CANCELLED->value],
+                    'context' => [
+                        'reason' => $reason,
+                        'source' => 'project_cancellation_service'
+                    ]
+                ])
                 ->log("Project dibatalkan oleh pengguna dengan alasan: {$reason}");
         });
     }

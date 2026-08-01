@@ -45,6 +45,7 @@ class RolePermissionSeeder extends Seeder
         // Direktur
         $roles[RoleEnum::DIREKTUR->value]->syncPermissions([
             $permissions[PermissionEnum::ViewDashboard->value],
+            $permissions[PermissionEnum::ViewLogs->value],
             $permissions[PermissionEnum::ViewLeads->value],
             $permissions[PermissionEnum::ViewClients->value],
             $permissions[PermissionEnum::ViewTasks->value],
@@ -57,6 +58,7 @@ class RolePermissionSeeder extends Seeder
         // Manager Operasional
         $roles[RoleEnum::MANAGER_OPERASIONAL->value]->syncPermissions([
             $permissions[PermissionEnum::ViewDashboard->value],
+            $permissions[PermissionEnum::ViewLogs->value],
             $permissions[PermissionEnum::ViewLeads->value],
             $permissions[PermissionEnum::ViewClients->value],
             $permissions[PermissionEnum::ViewTasks->value],

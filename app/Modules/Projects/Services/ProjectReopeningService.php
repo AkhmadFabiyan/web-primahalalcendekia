@@ -62,9 +62,22 @@ class ProjectReopeningService
 
             // 6. Activity Log
             activity()
+                ->useLog('projects')
                 ->causedBy($actor)
                 ->performedOn($project)
-                ->event('project_reopened')
+                ->event('reopened')
+                ->tap(function ($activity) use ($project) {
+                    $activity->project_id = $project->id;
+                    $activity->is_client_visible = false;
+                })
+                ->withProperties([
+                    'old' => ['status' => $project->getOriginal('status')?->value],
+                    'attributes' => ['status' => $targetStatus->value],
+                    'context' => [
+                        'reason' => $reason,
+                        'source' => 'project_reopening_service'
+                    ]
+                ])
                 ->log("Project dibuka kembali dari status {$oldStatusLabel} oleh pengguna dengan alasan: {$reason}");
         });
     }
