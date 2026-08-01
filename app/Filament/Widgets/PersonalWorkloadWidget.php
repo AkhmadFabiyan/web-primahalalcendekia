@@ -8,7 +8,7 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class PersonalWorkloadWidget extends BaseWidget
 {
-    protected static ?int $sort = 1;
+    protected static ?int $sort = 10;
 
     public static function canView(): bool
     {

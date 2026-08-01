@@ -23,6 +23,17 @@ class Invoice extends Model implements HasMedia
 {
     use HasUuids, HasFactory, SoftDeletes, LogsActivity, InteractsWithMedia, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
+    protected static function booted()
+    {
+        static::saved(function ($model) {
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+        });
+
+        static::deleted(function ($model) {
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+        });
+    }
+
     protected $guarded = [];
 
     protected static function newFactory()

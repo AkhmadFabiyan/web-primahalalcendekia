@@ -32,5 +32,14 @@ class AppServiceProvider extends ServiceProvider
             \App\Modules\Payments\Events\GovernmentInvoicePaid::class,
             \App\Listeners\CheckGovernmentInvoicePaidListener::class,
         );
+
+        // Management Report Cache Observers
+        \App\Modules\Leads\Models\Lead::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Projects\Models\Project::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Payments\Models\Invoice::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Payments\Models\Payment::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Projects\Models\Certificate::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Projects\Models\ProjectAssignment::observe(\App\Observers\ReportCacheObserver::class);
+        \App\Modules\Workflows\Models\Task::observe(\App\Observers\ReportCacheObserver::class);
     }
 }

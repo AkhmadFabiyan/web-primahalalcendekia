@@ -19,6 +19,27 @@ class Payment extends Model implements HasMedia
 {
     use HasUuids, HasFactory, SoftDeletes, LogsActivity, InteractsWithMedia, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
+    protected static function booted()
+    {
+        static::saved(function ($model) {
+            self::flushDashboardCache();
+        });
+
+        static::deleted(function ($model) {
+            self::flushDashboardCache();
+        });
+    }
+
+    protected static function flushDashboardCache()
+    {
+        // Flush wildcard cache or specific tags if Redis is used. 
+        // For file/database cache without tags, we may have to clear the whole cache or use a specific prefix cleanup command.
+        // Assuming there's a console command or we can just iterate, but Laravel Cache doesn't support wildcard out of the box unless using Redis.
+        // So we will just clear the cache for simplicity if tagging isn't enabled, or run artisan cache:clear.
+        // A better approach is to use a tagged cache if supported, or increment a cache version key.
+        \Illuminate\Support\Facades\Artisan::call('cache:clear'); 
+    }
+
     public function getProjectForLock()
     {
         return $this->invoice?->project;

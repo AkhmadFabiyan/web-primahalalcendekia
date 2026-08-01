@@ -20,6 +20,17 @@ class Project extends Model
 {
     use HasUuids, HasFactory, SoftDeletes, LogsActivity, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
 
+    protected static function booted()
+    {
+        static::saved(function ($model) {
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+        });
+
+        static::deleted(function ($model) {
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+        });
+    }
+
     protected $guarded = [];
 
     protected static function newFactory()

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class MyTasksWidget extends BaseWidget
 {
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 11;
     protected int | string | array $columnSpan = 'full';
 
     public static function canView(): bool

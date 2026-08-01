@@ -46,6 +46,9 @@ enum Permission: string
     case ManageSettings = 'settings.manage';
 
     case ViewReports = 'reports.view';
+    case ExportCsvReports = 'report.export.csv';
+    case ExportXlsxReports = 'report.export.xlsx';
+    case ExportPdfReports = 'report.export.pdf';
 
     case ViewArchives = 'archives.view';
     case DownloadInternalArchives = 'archives.download_internal';

@@ -53,6 +53,9 @@ class RolePermissionSeeder extends Seeder
             $permissions[PermissionEnum::ViewDocuments->value],
             $permissions[PermissionEnum::ViewCertificates->value],
             $permissions[PermissionEnum::ViewReports->value],
+            $permissions[PermissionEnum::ExportCsvReports->value],
+            $permissions[PermissionEnum::ExportXlsxReports->value],
+            $permissions[PermissionEnum::ExportPdfReports->value],
         ]);
 
         // Manager Operasional
@@ -66,6 +69,9 @@ class RolePermissionSeeder extends Seeder
             $permissions[PermissionEnum::ViewDocuments->value],
             $permissions[PermissionEnum::ViewCertificates->value],
             $permissions[PermissionEnum::ViewReports->value],
+            $permissions[PermissionEnum::ExportCsvReports->value],
+            $permissions[PermissionEnum::ExportXlsxReports->value],
+            $permissions[PermissionEnum::ExportPdfReports->value],
         ]);
 
         // Marketing
