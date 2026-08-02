@@ -20,11 +20,13 @@ class FinanceDashboardFilterData
         public ?string $payment_method
     ) {}
 
-    public static function fromArray(array $data): self
+    public static function fromArray(?array $data = null): self
     {
+        $data ??= [];
+
         return new self(
-            period_start: !empty($data['period_start']) ? Carbon::parse($data['period_start'])->startOfDay() : Carbon::now()->startOfMonth(),
-            period_end: !empty($data['period_end']) ? Carbon::parse($data['period_end'])->endOfDay() : Carbon::now()->endOfDay(),
+            period_start: ! empty($data['period_start']) ? Carbon::parse($data['period_start'])->startOfDay() : Carbon::now()->startOfMonth(),
+            period_end: ! empty($data['period_end']) ? Carbon::parse($data['period_end'])->endOfDay() : Carbon::now()->endOfDay(),
             service: $data['service'] ?? null,
             client_type: $data['client_type'] ?? null,
             pic_id: $data['pic_id'] ?? null,

@@ -2,11 +2,13 @@
 
 namespace App\Filament\Resources\Payments\Infolists;
 
-use Filament\Infolists\Components\Tabs;
-use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\Grid;
+use App\Modules\Payments\Enums\InvoiceAudience;
+use App\Modules\Payments\Enums\InvoiceStatus;
 use App\Modules\Payments\Models\Invoice;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
 
 class InvoiceWorkspaceInfolist
 {
@@ -36,14 +38,14 @@ class InvoiceWorkspaceInfolist
                                         TextEntry::make('discount_total')->label('Diskon')->money('IDR'),
                                         TextEntry::make('total')->label('Total Tagihan')->money('IDR')->weight('bold'),
                                         TextEntry::make('notes')->label('Catatan')->placeholder('Tidak ada catatan.'),
-                                        TextEntry::make('cancel_reason')->label('Alasan Batal')->placeholder('-')->visible(fn (Invoice $record) => $record->status === \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED),
+                                        TextEntry::make('cancel_reason')->label('Alasan Batal')->placeholder('-')->visible(fn (Invoice $record) => $record->status === InvoiceStatus::CANCELLED),
                                     ])->columnSpan(1),
 
                                 Section::make('Informasi Pihak Terkait')
                                     ->schema([
                                         TextEntry::make('project.client.business_id')->label('ID Klien'),
                                         TextEntry::make('project.client.company_name')->label('Klien'),
-                                        TextEntry::make('partner.name')->label('Mitra')->visible(fn (Invoice $record) => $record->audience === \App\Modules\Payments\Enums\InvoiceAudience::PARTNER),
+                                        TextEntry::make('partner.name')->label('Mitra')->visible(fn (Invoice $record) => $record->audience === InvoiceAudience::PARTNER),
                                     ])->columnSpanFull(),
                             ]),
                         ]),

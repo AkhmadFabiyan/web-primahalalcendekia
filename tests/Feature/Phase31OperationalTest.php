@@ -2,16 +2,14 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
-use Tests\TestCase;
-use App\Models\User;
-use Spatie\Permission\Models\Role;
 use App\Enums\Role as RoleEnum;
-use App\Modules\Projects\Models\Project;
-use App\Modules\Projects\Enums\ProjectStatus;
-use App\Modules\Dashboards\Services\OperationalDashboardService;
+use App\Filament\Widgets\OperationalKpiWidget;
+use App\Models\User;
 use App\Modules\Dashboards\DataTransferObjects\OperationalDashboardFilterData;
+use App\Modules\Dashboards\Services\OperationalDashboardService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
+use Tests\TestCase;
 
 class Phase31OperationalTest extends TestCase
 {
@@ -24,9 +22,9 @@ class Phase31OperationalTest extends TestCase
         $staff->assignRole($role);
 
         $this->actingAs($staff)
-             ->get('/admin')
-             ->assertStatus(200)
-             ->assertSeeLivewire('app.filament.widgets.operational-kpi-widget');
+            ->get('/dashboard')
+            ->assertStatus(200)
+            ->assertSeeLivewire(OperationalKpiWidget::class);
     }
 
     public function test_operational_dashboard_is_not_accessible_to_client()
@@ -36,9 +34,9 @@ class Phase31OperationalTest extends TestCase
         $client->assignRole($role);
 
         $this->actingAs($client)
-             ->get('/admin')
-             ->assertStatus(200)
-             ->assertDontSeeLivewire('app.filament.widgets.operational-kpi-widget');
+            ->get('/dashboard')
+            ->assertStatus(200)
+            ->assertDontSeeLivewire(OperationalKpiWidget::class);
     }
 
     public function test_service_returns_correct_kpis()

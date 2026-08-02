@@ -7,17 +7,20 @@ use Filament\Widgets\Widget;
 
 class ClientOverviewWidget extends Widget
 {
+    protected static bool $isLazy = false;
+
     protected string $view = 'filament.widgets.client-overview-widget';
 
-    protected int | string | array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
     {
-        if (!auth()->user()->isClient()) {
+        if (! auth()->user()->isClient()) {
             return false;
         }
 
         $section = request('section', 'overview');
+
         return $section === 'overview' || $section === 'progress';
     }
 

@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\User;
 use App\Modules\Clients\Models\Partner;
-use App\Enums\Role;
 
 class PartnerPolicy
 {
@@ -13,7 +13,7 @@ class PartnerPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermissionTo(\App\Enums\Permission::ViewClients->value);
+        return $user->can(Permission::ViewClients->value);
     }
 
     /**
@@ -21,7 +21,7 @@ class PartnerPolicy
      */
     public function view(User $user, Partner $partner): bool
     {
-        return $user->hasPermissionTo(\App\Enums\Permission::ViewClients->value);
+        return $user->can(Permission::ViewClients->value);
     }
 
     /**
@@ -37,7 +37,7 @@ class PartnerPolicy
      */
     public function update(User $user, Partner $partner): bool
     {
-        return $user->hasPermissionTo(\App\Enums\Permission::UpdateClients->value);
+        return $user->can(Permission::UpdateClients->value);
     }
 
     /**

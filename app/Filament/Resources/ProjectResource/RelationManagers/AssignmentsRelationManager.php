@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ProjectResource\RelationManagers;
 use App\Models\User;
 use App\Modules\Projects\Enums\AssignmentRole;
 use App\Modules\Projects\Services\AssignmentService;
+use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\App;
 class AssignmentsRelationManager extends RelationManager
 {
     protected static string $relationship = 'assignments';
+
     protected static ?string $title = 'PIC Internal';
 
     public function table(Table $table): Table
@@ -40,7 +42,7 @@ class AssignmentsRelationManager extends RelationManager
                 //
             ])
             ->headerActions([
-                Tables\Actions\Action::make('assign')
+                Action::make('assign')
                     ->label('Tugaskan PIC')
                     ->icon('heroicon-o-plus')
                     ->form([
@@ -62,14 +64,14 @@ class AssignmentsRelationManager extends RelationManager
                         $role = AssignmentRole::from($data['assignment_role']);
                         $user = User::find($data['user_id']);
                         $reason = $data['reason'] ?? null;
-                        
+
                         $service = App::make(AssignmentService::class);
                         $service->reassign($this->getOwnerRecord(), $role, $user, $reason);
                     })
                     ->visible(fn () => auth()->user()->hasRole(['Super Admin', 'Manager Operasional'])),
             ])
             ->actions([
-                Tables\Actions\Action::make('reassign')
+                Action::make('reassign')
                     ->label('Ganti PIC')
                     ->icon('heroicon-o-arrow-path')
                     ->form([
@@ -85,7 +87,7 @@ class AssignmentsRelationManager extends RelationManager
                         $role = AssignmentRole::from($record->assignment_role->value);
                         $user = User::find($data['user_id']);
                         $reason = $data['reason'];
-                        
+
                         $service = App::make(AssignmentService::class);
                         $service->reassign($this->getOwnerRecord(), $role, $user, $reason);
                     })

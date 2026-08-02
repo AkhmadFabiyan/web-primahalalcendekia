@@ -6,10 +6,11 @@ use App\Enums\Permission as PermissionEnum;
 use App\Enums\Role as RoleEnum;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Tests\TestCase;
 
 class RolePermissionTest extends TestCase
@@ -26,7 +27,7 @@ class RolePermissionTest extends TestCase
     {
         $rolesCount = count(RoleEnum::cases());
         $this->assertDatabaseCount('roles', $rolesCount);
-        
+
         foreach (RoleEnum::cases() as $roleEnum) {
             $this->assertDatabaseHas('roles', [
                 'name' => $roleEnum->value,
@@ -39,7 +40,7 @@ class RolePermissionTest extends TestCase
     {
         $permissionsCount = count(PermissionEnum::cases());
         $this->assertDatabaseCount('permissions', $permissionsCount);
-        
+
         // Assert no 'delete' or 'create_clients'
         $this->assertDatabaseMissing('permissions', ['name' => 'clients.create']);
         $this->assertDatabaseMissing('permissions', ['name' => 'projects.create']);
@@ -50,10 +51,10 @@ class RolePermissionTest extends TestCase
     {
         // Run again, should not throw constraint violations or duplicate entries
         $this->seed(RolePermissionSeeder::class);
-        
+
         $rolesCount = count(RoleEnum::cases());
         $this->assertDatabaseCount('roles', $rolesCount);
-        
+
         $permissionsCount = count(PermissionEnum::cases());
         $this->assertDatabaseCount('permissions', $permissionsCount);
     }
@@ -61,7 +62,7 @@ class RolePermissionTest extends TestCase
     public function test_user_cannot_have_more_than_one_role()
     {
         $user = User::factory()->create();
-        
+
         $user->syncRoles([RoleEnum::MARKETING->value]);
         $this->assertTrue($user->hasRole(RoleEnum::MARKETING->value));
         $this->assertEquals(1, $user->roles()->count());
@@ -88,7 +89,7 @@ class RolePermissionTest extends TestCase
     public function test_marketing_can_view_clients_but_not_update()
     {
         $marketing = Role::findByName(RoleEnum::MARKETING->value);
-        
+
         $this->assertTrue($marketing->hasPermissionTo(PermissionEnum::ViewClients->value));
         $this->assertFalse($marketing->hasPermissionTo(PermissionEnum::UpdateClients->value));
     }
@@ -96,19 +97,21 @@ class RolePermissionTest extends TestCase
     public function test_klien_has_only_dashboard_view_permission()
     {
         $klien = Role::findByName(RoleEnum::KLIEN->value);
-        
+
         $this->assertTrue($klien->hasPermissionTo(PermissionEnum::ViewDashboard->value));
         $this->assertFalse($klien->hasPermissionTo(PermissionEnum::ViewClients->value));
         $this->assertFalse($klien->hasPermissionTo(PermissionEnum::ViewTasks->value));
         $this->assertFalse($klien->hasPermissionTo(PermissionEnum::ViewInvoices->value));
-        $this->assertEquals(1, $klien->permissions()->count());
+        $this->assertTrue($klien->hasPermissionTo(PermissionEnum::ViewArchives->value));
+        $this->assertTrue($klien->hasPermissionTo(PermissionEnum::DownloadClientArchives->value));
+        $this->assertEquals(3, $klien->permissions()->count());
     }
 
     public function test_super_admin_has_all_registered_permissions()
     {
         $superAdmin = Role::findByName(RoleEnum::SUPER_ADMIN->value);
         $permissionsCount = count(PermissionEnum::cases());
-        
+
         $this->assertEquals($permissionsCount, $superAdmin->permissions()->count());
         $this->assertTrue($superAdmin->hasPermissionTo(PermissionEnum::UpdatePostAudit->value));
     }
@@ -132,16 +135,16 @@ class RolePermissionTest extends TestCase
     {
         // Define dummy routes to trigger 403
         Route::get('/test-403', function () {
-            throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException();
+            throw new AccessDeniedHttpException;
         })->middleware('web');
 
         Route::get('/api/test-403', function () {
-            throw new \Illuminate\Auth\Access\AuthorizationException();
+            throw new AuthorizationException;
         });
 
         // Test Web request
         $response = $this->get('/test-403');
-        $response->assertRedirect('/admin');
+        $response->assertRedirect('/dashboard');
 
         // Test API request
         $apiResponse = $this->getJson('/api/test-403');

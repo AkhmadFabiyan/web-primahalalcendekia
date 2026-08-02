@@ -2,19 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Events\WorkflowBCompleted;
+use App\Listeners\CheckWorkflowCompletionListener;
 use App\Models\User;
 use App\Modules\Projects\Enums\AssignmentRole;
 use App\Modules\Projects\Enums\ProjectStatus;
 use App\Modules\Projects\Models\Project;
 use App\Modules\Projects\Models\ProjectAssignment;
-use App\Modules\Workflows\Enums\AuditFindingStatus;
+use App\Modules\Workflows\Enums\AuditMethod;
 use App\Modules\Workflows\Enums\TaskStatus;
 use App\Modules\Workflows\Enums\TaskType;
-use App\Modules\Workflows\Enums\WorkflowLane;
+use App\Modules\Workflows\Enums\WorkflowReviewDecision;
 use App\Modules\Workflows\Enums\WorkflowStatus;
-use App\Modules\Workflows\Enums\WorkflowTrack;
 use App\Modules\Workflows\Models\AuditExecution;
-use App\Modules\Workflows\Models\AuditFinding;
+use App\Modules\Workflows\Models\AuditPlan;
 use App\Modules\Workflows\Models\Task;
 use App\Modules\Workflows\Models\TaskChecklistItem;
 use App\Modules\Workflows\Models\WorkflowStep;
@@ -30,12 +31,19 @@ class Phase21AuditorReviewTest extends TestCase
     use RefreshDatabase;
 
     protected AuditorReviewService $reviewService;
+
     protected AuditExecutionService $executionService;
+
     protected User $pendamping;
+
     protected User $auditor;
+
     protected Project $project;
+
     protected Task $executionTask;
+
     protected Task $reviewTask;
+
     protected AuditExecution $execution;
 
     protected function setUp(): void
@@ -78,18 +86,18 @@ class Phase21AuditorReviewTest extends TestCase
             'entered_at' => now(),
         ]);
 
-        \App\Modules\Workflows\Models\AuditPlan::create([
+        AuditPlan::create([
             'project_id' => $this->project->id,
             'scheduled_start_at' => now()->addDays(2),
             'location' => 'Kantor Pusat',
-            'audit_method' => \App\Modules\Workflows\Enums\AuditMethod::ONSITE->value,
+            'audit_method' => AuditMethod::ONSITE->value,
             'confirmed_at' => now(),
             'confirmed_by' => $this->pendamping->id,
         ]);
 
         // Simulasikan Pendamping melakukan eksekusi dan submit
         $this->executionService->startExecution($this->executionTask, $this->pendamping);
-        
+
         TaskChecklistItem::where('task_id', $this->executionTask->id)->update([
             'is_completed' => true,
         ]);
@@ -108,7 +116,7 @@ class Phase21AuditorReviewTest extends TestCase
     public function test_auditor_can_start_review()
     {
         $this->reviewService->startReview($this->reviewTask, $this->auditor);
-        
+
         $this->reviewTask->refresh();
         $this->assertEquals(TaskStatus::IN_PROGRESS, $this->reviewTask->status);
 
@@ -134,7 +142,7 @@ class Phase21AuditorReviewTest extends TestCase
 
         $this->assertDatabaseHas('workflow_reviews', [
             'review_task_id' => $this->reviewTask->id,
-            'decision' => \App\Modules\Workflows\Enums\WorkflowReviewDecision::APPROVED->value,
+            'decision' => WorkflowReviewDecision::APPROVED->value,
         ]);
 
         $this->assertDatabaseHas('workflow_steps', [
@@ -159,7 +167,7 @@ class Phase21AuditorReviewTest extends TestCase
 
         $this->assertDatabaseHas('workflow_reviews', [
             'review_task_id' => $this->reviewTask->id,
-            'decision' => \App\Modules\Workflows\Enums\WorkflowReviewDecision::REVISION_REQUESTED->value,
+            'decision' => WorkflowReviewDecision::REVISION_REQUESTED->value,
             'reason' => 'Bukti kurang lengkap',
         ]);
 
@@ -179,12 +187,12 @@ class Phase21AuditorReviewTest extends TestCase
     public function test_workflow_b_completed_event_is_dispatched()
     {
         Event::fake([
-            \App\Events\WorkflowBCompleted::class,
+            WorkflowBCompleted::class,
         ]);
 
-        $this->reviewService->updateAuditorStatus($this->project, $this->auditor, WorkflowStatus::FATWA_SESSION_COMPLETED, 'Fatwa selesai');
+        $this->reviewService->updateAuditorStatus($this->project, $this->auditor, WorkflowStatus::AUDIT_REPORT_COMPLETED, 'Laporan audit selesai');
 
-        Event::assertDispatched(\App\Events\WorkflowBCompleted::class, function ($event) {
+        Event::assertDispatched(WorkflowBCompleted::class, function ($event) {
             return $event->projectId === $this->project->id;
         });
     }
@@ -197,21 +205,21 @@ class Phase21AuditorReviewTest extends TestCase
         ]);
 
         // Mock event WorkflowBCompleted
-        $event = new \App\Events\WorkflowBCompleted($this->project->id);
-        
-        $listener = new \App\Listeners\CheckWorkflowCompletionListener();
-        
-        // Before handling, update workflow B to FATWA_SESSION_COMPLETED
+        $event = new WorkflowBCompleted($this->project->id);
+
+        $listener = new CheckWorkflowCompletionListener;
+
+        // Before handling, update workflow B to its completion status.
         WorkflowStep::where('project_id', $this->project->id)->where('step_code', 'AUDITOR_PROGRESS')->update([
-            'status' => WorkflowStatus::FATWA_SESSION_COMPLETED->value,
+            'status' => WorkflowStatus::AUDIT_REPORT_COMPLETED->value,
         ]);
 
         $listener->handle($event);
 
         $this->project->refresh();
-        
+
         $this->assertEquals(ProjectStatus::WAITING_GOVERNMENT_INVOICE, $this->project->status);
-        
+
         $this->assertDatabaseHas('activity_log', [
             'subject_id' => $this->project->id,
             'subject_type' => get_class($this->project),

@@ -13,7 +13,14 @@ return new class extends Migration
     {
         Schema::create('recently_viewed_records', function (Blueprint $table) {
             $table->id();
+            $table->foreignUuid('user_id')->constrained()->cascadeOnDelete();
+            $table->string('record_type');
+            $table->string('record_id');
+            $table->timestamp('last_viewed_at');
             $table->timestamps();
+
+            $table->unique(['user_id', 'record_type', 'record_id']);
+            $table->index(['user_id', 'last_viewed_at']);
         });
     }
 
@@ -25,4 +32,3 @@ return new class extends Migration
         Schema::dropIfExists('recently_viewed_records');
     }
 };
-

@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Modules\Documents\Models\Document;
+use Filament\Actions\Action;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
@@ -11,11 +12,12 @@ use Illuminate\Database\Eloquent\Builder;
 class ClientDocumentsWidget extends BaseWidget
 {
     protected static ?int $sort = 3;
-    protected int | string | array $columnSpan = 'full';
+
+    protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
     {
-        if (!auth()->user()->isClient()) {
+        if (! auth()->user()->isClient()) {
             return false;
         }
 
@@ -46,10 +48,10 @@ class ClientDocumentsWidget extends BaseWidget
                     ->sortable(),
             ])
             ->actions([
-                Tables\Actions\Action::make('download')
+                Action::make('download')
                     ->label('Unduh')
-                    ->icon('heroicon-m-arrow-down-tray')
-                    // Nanti dapat dihubungkan dengan File Download logic yang aman
+                    ->icon('heroicon-m-arrow-down-tray'),
+                // Nanti dapat dihubungkan dengan File Download logic yang aman
             ])
             ->emptyStateHeading('Belum ada dokumen.')
             ->emptyStateDescription('Dokumen yang dibagikan untuk Anda akan tampil di sini.')

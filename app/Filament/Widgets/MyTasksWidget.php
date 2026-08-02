@@ -2,21 +2,23 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\Tasks\TaskResource;
 use App\Modules\Workflows\Enums\TaskStatus;
 use App\Modules\Workflows\Models\Task;
+use Filament\Actions\Action;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
-use Illuminate\Database\Eloquent\Builder;
 
 class MyTasksWidget extends BaseWidget
 {
     protected static ?int $sort = 11;
-    protected int | string | array $columnSpan = 'full';
+
+    protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
     {
-        return auth()->user()->isInternalStaff() && !auth()->user()->isSuperAdmin();
+        return auth()->user()->isInternalStaff() && ! auth()->user()->isSuperAdmin();
     }
 
     public function table(Table $table): Table
@@ -50,9 +52,9 @@ class MyTasksWidget extends BaseWidget
                     ->sortable(),
             ])
             ->actions([
-                Tables\Actions\Action::make('kerjakan')
+                Action::make('kerjakan')
                     ->label('Kerjakan')
-                    ->url(fn (Task $record): string => \App\Filament\Resources\Tasks\TaskResource::getUrl('view', ['record' => $record]))
+                    ->url(fn (Task $record): string => TaskResource::getUrl('view', ['record' => $record]))
                     ->icon('heroicon-m-arrow-right-circle'),
             ])
             ->emptyStateHeading('Semua pekerjaan telah selesai.')

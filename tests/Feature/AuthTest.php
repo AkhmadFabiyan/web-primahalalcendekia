@@ -20,8 +20,8 @@ class AuthTest extends TestCase
             'password' => bcrypt('password123'),
         ]);
 
-        $this->get('/admin/login')->assertSuccessful();
-        
+        $this->get('/dashboard/login')->assertSuccessful();
+
         $oldSessionId = session()->getId();
 
         Livewire::test(Login::class)
@@ -36,7 +36,7 @@ class AuthTest extends TestCase
 
         $this->assertAuthenticatedAs($user);
         $this->assertNotEquals($oldSessionId, session()->getId());
-        
+
         // Assert exactly one activity log
         $this->assertDatabaseHas('activity_log', [
             'description' => 'Login berhasil',
@@ -115,11 +115,11 @@ class AuthTest extends TestCase
         $this->actingAs($user);
         $oldSessionId = session()->getId();
 
-        $this->post('/admin/logout')->assertRedirect('/admin/login');
+        $this->post('/dashboard/logout')->assertRedirect('/dashboard/login');
 
         $this->assertGuest();
         $this->assertNotEquals($oldSessionId, session()->getId());
-        
+
         $this->assertDatabaseHas('activity_log', [
             'description' => 'Logout berhasil',
             'causer_id' => $user->id,

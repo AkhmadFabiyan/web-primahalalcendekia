@@ -12,11 +12,12 @@ class OperationalDashboardFilterData
         public readonly ?string $pic_id = null,
         public readonly ?string $status = null,
         public readonly ?string $stage = null,
-    ) {
-    }
+    ) {}
 
-    public static function fromArray(array $data): self
+    public static function fromArray(?array $data = null): self
     {
+        $data ??= [];
+
         return new self(
             period_start: $data['period_start'] ?? null,
             period_end: $data['period_end'] ?? null,

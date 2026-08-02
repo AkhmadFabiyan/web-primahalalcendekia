@@ -9,6 +9,7 @@ use App\Modules\Clients\Models\Client;
 use App\Modules\Clients\Models\Partner;
 use App\Modules\Clients\Services\ClientAccountService;
 use App\Modules\Clients\Services\IdGeneratorService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -25,7 +26,7 @@ class ClientManagementTest extends TestCase
 
     public function test_id_generator_produces_correct_formats_and_shared_sequence()
     {
-        $service = new IdGeneratorService();
+        $service = new IdGeneratorService;
         $year = date('Y');
 
         $clientId1 = $service->generateClientId();
@@ -60,7 +61,7 @@ class ClientManagementTest extends TestCase
             'email' => 'mitra@test.com',
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         Client::create([
             'business_id' => 'PHC-HAL-2026-0002',
             'client_type' => ClientType::DIRECT,
@@ -87,7 +88,7 @@ class ClientManagementTest extends TestCase
         $superAdmin->assignRole(Role::SUPER_ADMIN->value);
         $this->actingAs($superAdmin);
 
-        $service = new ClientAccountService();
+        $service = new ClientAccountService;
         $result = $service->createAccount($client);
         $user = $result['user'];
         $this->assertNotNull($result['password']);
@@ -110,8 +111,8 @@ class ClientManagementTest extends TestCase
         $this->actingAs($klien);
 
         // Akses route clients list
-        $response = $this->get('/admin/clients');
-        $response->assertRedirect('/admin'); // Sesuai dengan requirement, diredirect ke dashboard
+        $response = $this->get('/dashboard/clients');
+        $response->assertRedirect('/dashboard'); // Sesuai dengan requirement, diredirect ke dashboard
     }
 
     public function test_admin_can_view_clients_list()
@@ -122,7 +123,7 @@ class ClientManagementTest extends TestCase
         $this->actingAs($admin);
 
         // Akses route clients list
-        $response = $this->get('/admin/clients');
+        $response = $this->get('/dashboard/clients');
         $response->assertStatus(200);
     }
 }

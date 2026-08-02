@@ -2,25 +2,29 @@
 
 namespace App\Filament\Widgets\Reports;
 
+use App\Filament\Exports\ProjectReportExporter;
+use App\Modules\Reports\DataTransferObjects\ManagementReportFilterData;
+use App\Modules\Reports\Services\ManagementReportService;
+use Filament\Actions\Action;
+use Filament\Actions\ExportAction;
+use Filament\Actions\Exports\Enums\ExportFormat;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Widgets\TableWidget as BaseWidget;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
-use App\Modules\Reports\Services\ManagementReportService;
-use App\Modules\Reports\DataTransferObjects\ManagementReportFilterData;
-use App\Filament\Exports\ProjectExporter;
-use Filament\Actions\Exports\Enums\ExportFormat;
+use Filament\Widgets\TableWidget as BaseWidget;
 
 class ReportTableWidget extends BaseWidget
 {
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 10;
-    protected int | string | array $columnSpan = 'full';
-    
+
+    protected int|string|array $columnSpan = 'full';
+
     public static function canView(): bool
     {
         $user = auth()->user();
+
         return $user && $user->can('report.view');
     }
 
@@ -28,7 +32,7 @@ class ReportTableWidget extends BaseWidget
     {
         $filterData = ManagementReportFilterData::fromArray($this->filters);
         $service = new ManagementReportService($filterData);
-        
+
         return $table
             ->query($service->getReportQuery())
             ->heading('Detail Project')
@@ -55,7 +59,7 @@ class ReportTableWidget extends BaseWidget
                     ->label('Nilai Invoice')
                     ->money('IDR')
                     ->state(function ($record) {
-                        return $record->invoices->sum(fn($inv) => $inv->subtotal - $inv->discount_total);
+                        return $record->invoices->sum(fn ($inv) => $inv->subtotal - $inv->discount_total);
                     }),
                 Tables\Columns\TextColumn::make('payments_sum_amount')
                     ->label('Total Payment')
@@ -65,19 +69,19 @@ class ReportTableWidget extends BaseWidget
                     }),
             ])
             ->headerActions([
-                Tables\Actions\ExportAction::make('export')
+                ExportAction::make('export')
                     ->label('Export CSV')
-                    ->exporter(ProjectExporter::class)
+                    ->exporter(ProjectReportExporter::class)
                     ->formats([
                         ExportFormat::Csv,
                     ])
-                    ->chunkSize(100)
-                    // Filament ExportAction automatically uses the table's query which includes our filters
+                    ->chunkSize(100),
+                // Filament ExportAction automatically uses the table's query which includes our filters
             ])
             ->actions([
-                Tables\Actions\Action::make('view_detail')
+                Action::make('view_detail')
                     ->label('Lihat Detail')
-                    ->url(fn ($record) => '/dashboard/projects/' . $record->id)
+                    ->url(fn ($record) => '/dashboard/projects/'.$record->id)
                     ->icon('heroicon-m-eye'),
             ])
             ->paginated([5, 10, 25, 50])

@@ -3,22 +3,38 @@
 namespace App\Filament\Pages;
 
 use App\Modules\Settings\Services\FinancialSettingsService;
+use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
-use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Pages\Page;
 use Filament\Notifications\Notification;
+use Filament\Pages\Page;
+use Filament\Schemas\Schema;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Gate;
 
 class ManageFinancialSettings extends Page implements HasForms
 {
     use InteractsWithForms;
 
-    public static function getNavigationIcon(): ?string { return 'heroicon-o-currency-dollar'; }
-    public static function getNavigationGroup(): ?string { return 'Settings'; }
-    public static function getNavigationLabel(): string { return 'Financial Settings'; }
-    public function getTitle(): string|\Illuminate\Contracts\Support\Htmlable { return 'Financial Settings'; }
+    public static function getNavigationIcon(): ?string
+    {
+        return 'heroicon-o-currency-dollar';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Settings';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'Financial Settings';
+    }
+
+    public function getTitle(): string|Htmlable
+    {
+        return 'Financial Settings';
+    }
 
     protected string $view = 'filament.pages.manage-financial-settings';
 
@@ -50,9 +66,9 @@ class ManageFinancialSettings extends Page implements HasForms
         ]);
     }
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
+        return $schema
             ->schema([
                 Forms\Components\Section::make('General Information')
                     ->schema([
@@ -80,7 +96,7 @@ class ManageFinancialSettings extends Page implements HasForms
                         Forms\Components\TextInput::make('receipt_template_version')->default('1')->disabled(),
                         Forms\Components\Textarea::make('invoice_footer')->label('Invoice Footer Note'),
                         Forms\Components\Textarea::make('receipt_footer')->label('Receipt Footer Note'),
-                    ])->columns(2)
+                    ])->columns(2),
             ])
             ->statePath('data');
     }

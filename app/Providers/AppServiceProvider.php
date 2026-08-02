@@ -2,10 +2,28 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Http\Request;
+use App\Events\WorkflowACompleted;
+use App\Filament\Resources\Clients\Pages\ListClients;
+use App\Listeners\AuthEventSubscriber;
+use App\Listeners\CheckGovernmentInvoicePaidListener;
+use App\Listeners\CheckWorkflowCompletionListener;
+use App\Listeners\NotifyCompanionOnWorkflowACompleted;
+use App\Modules\Leads\Models\Lead;
+use App\Modules\Payments\Events\GovernmentInvoicePaid;
+use App\Modules\Payments\Models\Invoice;
+use App\Modules\Payments\Models\Payment;
+use App\Modules\Projects\Models\Certificate;
+use App\Modules\Projects\Models\Project;
+use App\Modules\Projects\Models\ProjectAssignment;
+use App\Modules\Workflows\Events\WorkflowStepCompleted;
+use App\Modules\Workflows\Models\Task;
+use App\Observers\ReportCacheObserver;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,6 +40,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Livewire::component(
+            'filament.admin.resources.clients.pages.list-clients',
+            ListClients::class,
+        );
+
         RateLimiter::for('api-read', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
@@ -33,28 +56,27 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api-auth', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());
         });
-        \Illuminate\Support\Facades\Event::subscribe(\App\Listeners\AuthEventSubscriber::class);
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Events\WorkflowACompleted::class,
-            \App\Listeners\NotifyCompanionOnWorkflowACompleted::class,
+        Event::subscribe(AuthEventSubscriber::class);
+        Event::listen(
+            WorkflowACompleted::class,
+            NotifyCompanionOnWorkflowACompleted::class,
         );
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Modules\Workflows\Events\WorkflowStepCompleted::class,
-            \App\Listeners\CheckWorkflowCompletionListener::class,
+        Event::listen(
+            WorkflowStepCompleted::class,
+            CheckWorkflowCompletionListener::class,
         );
-        \Illuminate\Support\Facades\Event::listen(
-            \App\Modules\Payments\Events\GovernmentInvoicePaid::class,
-            \App\Listeners\CheckGovernmentInvoicePaidListener::class,
+        Event::listen(
+            GovernmentInvoicePaid::class,
+            CheckGovernmentInvoicePaidListener::class,
         );
 
         // Management Report Cache Observers
-        \App\Modules\Leads\Models\Lead::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Projects\Models\Project::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Payments\Models\Invoice::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Payments\Models\Payment::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Projects\Models\Certificate::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Projects\Models\ProjectAssignment::observe(\App\Observers\ReportCacheObserver::class);
-        \App\Modules\Workflows\Models\Task::observe(\App\Observers\ReportCacheObserver::class);
+        Lead::observe(ReportCacheObserver::class);
+        Project::observe(ReportCacheObserver::class);
+        Invoice::observe(ReportCacheObserver::class);
+        Payment::observe(ReportCacheObserver::class);
+        Certificate::observe(ReportCacheObserver::class);
+        ProjectAssignment::observe(ReportCacheObserver::class);
+        Task::observe(ReportCacheObserver::class);
     }
 }
-

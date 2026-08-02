@@ -3,18 +3,19 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Filament\Facades\Filament;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Filament\Facades\Filament;
 
 class RedirectClientFromInternalRoutes
 {
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next)
     {
         $user = auth()->user();
 
@@ -28,7 +29,7 @@ class RedirectClientFromInternalRoutes
                 }
 
                 // Redirect clients trying to access other filament pages to the dashboard safely
-                return redirect()->route('filament.admin.pages.dashboard');
+                return new RedirectResponse(route('filament.admin.pages.dashboard'));
             }
         }
 

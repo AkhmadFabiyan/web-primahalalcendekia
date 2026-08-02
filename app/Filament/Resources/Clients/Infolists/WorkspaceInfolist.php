@@ -2,18 +2,65 @@
 
 namespace App\Filament\Resources\Clients\Infolists;
 
-use Filament\Infolists\Components\Tabs;
-use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\ViewEntry;
-use Filament\Infolists\Components\Actions\Action;
-use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
-use App\Modules\Projects\Services\ProjectHandoverService;
+use App\Models\User;
+use App\Modules\Clients\Enums\ClientType;
+use App\Modules\Payments\Enums\InvoiceStatus;
+use App\Modules\Payments\Enums\InvoiceType;
+use App\Modules\Payments\Enums\PaymentStatus;
+use App\Modules\Payments\Models\Invoice;
+use App\Modules\Payments\Models\Payment;
+use App\Modules\Payments\Services\GovernmentInvoiceService;
+use App\Modules\Payments\Services\PaymentService;
+use App\Modules\Payments\Services\TerminService;
+use App\Modules\Projects\Enums\AssignmentRole;
+use App\Modules\Projects\Enums\ProjectStatus;
+use App\Modules\Projects\Models\ProjectAssignment;
 use App\Modules\Projects\Models\SihalalCredential;
+use App\Modules\Projects\Services\AssignmentService;
+use App\Modules\Projects\Services\CertificateService;
+use App\Modules\Projects\Services\ProjectCancellationService;
+use App\Modules\Projects\Services\ProjectClosureReadinessService;
+use App\Modules\Projects\Services\ProjectFinancialSummaryService;
+use App\Modules\Projects\Services\ProjectHandoverService;
+use App\Modules\Projects\Services\ProjectReopeningService;
+use App\Modules\Workflows\Enums\AuditFindingCorrectionOwner;
+use App\Modules\Workflows\Enums\AuditFindingStatus;
+use App\Modules\Workflows\Enums\TaskStatus;
+use App\Modules\Workflows\Enums\TaskType;
+use App\Modules\Workflows\Enums\WorkflowStatus;
+use App\Modules\Workflows\Models\AuditExecution;
+use App\Modules\Workflows\Models\AuditFinding;
+use App\Modules\Workflows\Models\AuditPlan;
+use App\Modules\Workflows\Models\Task;
+use App\Modules\Workflows\Models\WorkflowStep;
+use App\Modules\Workflows\Services\AuditExecutionService;
+use App\Modules\Workflows\Services\AuditorReviewService;
+use App\Modules\Workflows\Services\AuditPlanningService;
+use App\Modules\Workflows\Services\EntryWorkflowService;
+use App\Modules\Workflows\Services\SpvEntryWorkflowService;
+use App\Modules\Workflows\Services\WorkflowReopeningService;
+use Brick\Math\BigDecimal;
+use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Get;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 
 class WorkspaceInfolist
 {
@@ -27,7 +74,7 @@ class WorkspaceInfolist
                         ->schema([
                             Section::make('Progress Gabungan')
                                 ->schema([
-                                    \Filament\Infolists\Components\ViewEntry::make('progress_gabungan')
+                                    ViewEntry::make('progress_gabungan')
                                         ->hiddenLabel()
                                         ->view('filament.components.workflow-progress'),
                                 ])
@@ -49,37 +96,39 @@ class WorkspaceInfolist
                                     ->schema([
                                         TextEntry::make('company_name')->label('Perusahaan'),
                                         TextEntry::make('client_type')->label('Tipe Klien')->badge(),
-                                        TextEntry::make('partner.name')->label('Mitra')->hidden(fn ($record) => !$record->partner_id),
+                                        TextEntry::make('partner.name')->label('Mitra')->hidden(fn ($record) => ! $record->partner_id),
                                         TextEntry::make('project.client_nominal')->label('Nominal Klien')->money('IDR'),
-                                        TextEntry::make('project.partner_nominal')->label('Nominal Mitra')->money('IDR')->hidden(fn ($record) => !$record->project?->partner_nominal),
+                                        TextEntry::make('project.partner_nominal')->label('Nominal Mitra')->money('IDR')->hidden(fn ($record) => ! $record->project?->partner_nominal),
                                         TextEntry::make('pic_name')->label('PIC'),
                                         TextEntry::make('pic_phone')->label('Phone PIC'),
                                         TextEntry::make('pic_email')->label('Email PIC'),
                                     ])->columnSpan(1),
-                                
+
                                 Section::make('Persiapan Entry')
                                     ->schema([
                                         TextEntry::make('document_status')
                                             ->label('Status Dokumen')
                                             ->state(function ($record) {
-                                                $step = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project?->id)
+                                                $step = WorkflowStep::where('project_id', $record->project?->id)
                                                     ->where('step_code', 'DOCUMENT_ADMINISTRATION')->first();
-                                                return $step ? \App\Modules\Workflows\Enums\WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
+
+                                                return $step ? WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
                                             })
                                             ->badge(),
-                                            
+
                                         TextEntry::make('sihalal_status')
                                             ->label('Akun SIHALAL')
                                             ->state(fn ($record) => $record->project?->sihalalCredential ? 'Sudah tersedia' : 'Belum tersedia')
                                             ->badge()
                                             ->color(fn (string $state): string => $state === 'Sudah tersedia' ? 'success' : 'danger'),
-                                            
+
                                         TextEntry::make('entry_pic')
                                             ->label('PIC Entry')
                                             ->state(function ($record) {
                                                 $assignment = $record->project?->assignments()
-                                                    ->where('assignment_role', \App\Modules\Projects\Enums\AssignmentRole::ENTRY->value)
+                                                    ->where('assignment_role', AssignmentRole::ENTRY->value)
                                                     ->whereNull('ended_at')->first();
+
                                                 return $assignment?->user?->name ?? 'Belum ditentukan';
                                             }),
                                     ])
@@ -99,30 +148,32 @@ class WorkspaceInfolist
                                                     ->password()
                                                     ->autocomplete('new-password')
                                                     ->dehydrated(fn ($state) => filled($state))
-                                                    ->required(fn ($record) => !$record->project?->sihalalCredential)
+                                                    ->required(fn ($record) => ! $record->project?->sihalalCredential)
                                                     ->helperText('Kosongkan jika tidak ingin mengubah password lama.'),
                                             ])
                                             ->action(function (array $data, $record) {
-                                                if (!$record->project) return;
-                                                
+                                                if (! $record->project) {
+                                                    return;
+                                                }
+
                                                 $credential = SihalalCredential::firstOrNew(['project_id' => $record->project->id]);
                                                 $credential->email_encrypted = $data['email'];
                                                 if (isset($data['password'])) {
                                                     $credential->password_encrypted = $data['password'];
                                                 }
-                                                
-                                                if (!$credential->exists) {
+
+                                                if (! $credential->exists) {
                                                     $credential->created_by = Auth::id();
                                                 }
                                                 $credential->updated_by = Auth::id();
                                                 $credential->save();
-                                                
+
                                                 Notification::make()
                                                     ->title('Kredensial disimpan')
                                                     ->success()
                                                     ->send();
                                             }),
-                                            
+
                                         Action::make('lihat_kredensial')
                                             ->label('Lihat Kredensial')
                                             ->icon('heroicon-o-eye')
@@ -133,20 +184,21 @@ class WorkspaceInfolist
                                             ->modalSubmitActionLabel('Tampilkan')
                                             ->modalIcon('heroicon-o-lock-closed')
                                             ->action(function ($record) {
-                                                if (!$record->project || !$record->project->sihalalCredential) {
+                                                if (! $record->project || ! $record->project->sihalalCredential) {
                                                     Notification::make()->title('Akun belum tersedia')->danger()->send();
+
                                                     return;
                                                 }
-                                                
+
                                                 $cred = $record->project->sihalalCredential;
                                                 $cred->update(['last_used_at' => now()]);
-                                                
+
                                                 activity()
                                                     ->performedOn($record->project)
                                                     ->causedBy(Auth::user())
                                                     ->event('sihalal_revealed')
                                                     ->log('Melihat kredensial SIHALAL');
-                                                    
+
                                                 // We can show notification with values, or dispatch browser event to show modal.
                                                 // Because we don't want to store them, an ephemeral notification is fine.
                                                 Notification::make()
@@ -156,7 +208,7 @@ class WorkspaceInfolist
                                                     ->persistent()
                                                     ->send();
                                             }),
-                                            
+
                                         Action::make('serahkan_ke_entry')
                                             ->label('Serahkan ke Entry')
                                             ->icon('heroicon-o-paper-airplane')
@@ -168,28 +220,30 @@ class WorkspaceInfolist
                                                     app(ProjectHandoverService::class)->handoverToEntry($record->project, Auth::user());
                                                     Notification::make()->title('Berhasil diserahkan ke Entry')->success()->send();
                                                 } catch (\Exception $e) {
-                                                    Notification::make()->title('Gagal: ' . $e->getMessage())->danger()->send();
+                                                    Notification::make()->title('Gagal: '.$e->getMessage())->danger()->send();
                                                 }
                                             }),
                                     ])
                                     ->columnSpan(1),
-                                
+
                                 Section::make('Progress Entry SIHALAL')
                                     ->schema([
                                         TextEntry::make('entry_progress_status')
                                             ->label('Status Entry Saat Ini')
                                             ->state(function ($record) {
-                                                $step = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project?->id)
+                                                $step = WorkflowStep::where('project_id', $record->project?->id)
                                                     ->where('step_code', 'ENTRY_PROGRESS')->first();
-                                                return $step ? \App\Modules\Workflows\Enums\WorkflowStatus::from($step->status)->getLabel() : 'Belum Tersedia';
+
+                                                return $step ? WorkflowStatus::from($step->status)->getLabel() : 'Belum Tersedia';
                                             })
                                             ->badge(),
                                         TextEntry::make('entry_task_status')
                                             ->label('Status Tugas')
                                             ->state(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project?->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project?->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->first();
+
                                                 return $task ? $task->status->name : '-';
                                             })
                                             ->badge(),
@@ -199,39 +253,42 @@ class WorkspaceInfolist
                                             ->label('Perbarui Status')
                                             ->icon('heroicon-o-arrow-path')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Select::make('new_status')
+                                                Select::make('new_status')
                                                     ->label('Status Baru')
                                                     ->options([
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::ENTRY_NOT_STARTED->value => 'Belum Mulai',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_CLIENT_DOCUMENTS->value => 'Menunggu Dokumen Klien',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::DOCUMENTS_INCOMPLETE->value => 'Dokumen Belum Lengkap',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::CREATING_SIHALAL_ACCOUNT->value => 'Pembuatan Akun SIHALAL',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::PREPARING_SJPH_MANUAL->value => 'Penyusunan Manual SJPH',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::INPUTTING_MATERIALS_PRODUCTS->value => 'Input Bahan dan Produk',
+                                                        WorkflowStatus::ENTRY_NOT_STARTED->value => 'Belum Mulai',
+                                                        WorkflowStatus::WAITING_CLIENT_DOCUMENTS->value => 'Menunggu Dokumen Klien',
+                                                        WorkflowStatus::DOCUMENTS_INCOMPLETE->value => 'Dokumen Belum Lengkap',
+                                                        WorkflowStatus::CREATING_SIHALAL_ACCOUNT->value => 'Pembuatan Akun SIHALAL',
+                                                        WorkflowStatus::PREPARING_SJPH_MANUAL->value => 'Penyusunan Manual SJPH',
+                                                        WorkflowStatus::INPUTTING_MATERIALS_PRODUCTS->value => 'Input Bahan dan Produk',
                                                     ])
                                                     ->required(),
-                                                \Filament\Forms\Components\Textarea::make('reason')
+                                                Textarea::make('reason')
                                                     ->label('Alasan (opsional)')
                                                     ->helperText('Isi jika ini merupakan penurunan status / mundur.'),
-                                                \Filament\Forms\Components\Textarea::make('note_content')
+                                                Textarea::make('note_content')
                                                     ->label('Catatan Pekerjaan (opsional)'),
                                             ])
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
+
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\EntryWorkflowService::class)->updateStatus(
+                                                    app(EntryWorkflowService::class)->updateStatus(
                                                         $task,
                                                         Auth::user(),
                                                         $data['new_status'],
@@ -243,20 +300,23 @@ class WorkspaceInfolist
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                                 }
                                             }),
-                                            
+
                                         Action::make('tambah_catatan')
                                             ->label('Tambah Catatan')
                                             ->icon('heroicon-o-document-plus')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION, \App\Modules\Workflows\Enums\TaskStatus::WAITING_REVIEW]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION, TaskStatus::WAITING_REVIEW]);
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Select::make('type')
+                                                Select::make('type')
                                                     ->label('Tipe Catatan')
                                                     ->options([
                                                         'WORK_NOTE' => 'Catatan Pekerjaan',
@@ -264,17 +324,17 @@ class WorkspaceInfolist
                                                     ])
                                                     ->required()
                                                     ->default('WORK_NOTE'),
-                                                \Filament\Forms\Components\Textarea::make('content')
+                                                Textarea::make('content')
                                                     ->label('Isi Catatan')
                                                     ->required(),
                                             ])
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                app(\App\Modules\Workflows\Services\EntryWorkflowService::class)->addNote(
+
+                                                app(EntryWorkflowService::class)->addNote(
                                                     $task,
                                                     Auth::user(),
                                                     $data['type'],
@@ -282,51 +342,59 @@ class WorkspaceInfolist
                                                 );
                                                 Notification::make()->title('Catatan ditambahkan')->success()->send();
                                             }),
-                                            
+
                                         Action::make('kelola_checklist')
                                             ->label('Checklist Pekerjaan')
                                             ->icon('heroicon-o-check-circle')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                if (!$task) return [];
+
+                                                if (! $task) {
+                                                    return [];
+                                                }
 
                                                 $items = $task->checklistItems()->orderBy('sort_order')->get();
-                                                
+
                                                 $schema = [];
                                                 foreach ($items as $item) {
-                                                    $schema[] = \Filament\Forms\Components\Checkbox::make('checklist_' . $item->id)
-                                                        ->label($item->label . ($item->is_required ? ' *' : ''))
+                                                    $schema[] = Checkbox::make('checklist_'.$item->id)
+                                                        ->label($item->label.($item->is_required ? ' *' : ''))
                                                         ->default($item->is_completed);
                                                 }
+
                                                 return $schema;
                                             })
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                if (!$task) return;
+
+                                                if (! $task) {
+                                                    return;
+                                                }
 
                                                 $items = $task->checklistItems;
                                                 foreach ($items as $item) {
-                                                    $key = 'checklist_' . $item->id;
+                                                    $key = 'checklist_'.$item->id;
                                                     if (isset($data[$key])) {
                                                         $wasCompleted = $item->is_completed;
                                                         $isCompleted = (bool) $data[$key];
-                                                        
+
                                                         if ($wasCompleted !== $isCompleted) {
                                                             $item->is_completed = $isCompleted;
                                                             $item->completed_by = $isCompleted ? Auth::id() : null;
@@ -337,7 +405,7 @@ class WorkspaceInfolist
                                                 }
                                                 Notification::make()->title('Checklist diperbarui')->success()->send();
                                             }),
-                                            
+
                                         Action::make('submit_ke_spv')
                                             ->label('Submit ke SPV')
                                             ->icon('heroicon-o-paper-airplane')
@@ -345,46 +413,52 @@ class WorkspaceInfolist
                                             ->requiresConfirmation()
                                             ->modalDescription('Pastikan semua input di SIHALAL sudah sesuai. Aksi ini akan meneruskan ke SPV untuk direview.')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::ENTRY_PROCESS->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::ENTRY_PROCESS->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
+
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\EntryWorkflowService::class)->submitForReview($task, Auth::user());
+                                                    app(EntryWorkflowService::class)->submitForReview($task, Auth::user());
                                                     Notification::make()->title('Berhasil disubmit ke SPV')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal submit')->body($e->getMessage())->danger()->send();
                                                 }
                                             }),
-                                            
+
                                         Action::make('mulai_review')
                                             ->label('Mulai Review')
                                             ->icon('heroicon-o-play')
                                             ->color('primary')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::TODO;
+
+                                                return $task && $task->status === TaskStatus::TODO;
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\SpvEntryWorkflowService::class)->startReview($task, Auth::user());
+                                                    app(SpvEntryWorkflowService::class)->startReview($task, Auth::user());
                                                     Notification::make()->title('Review dimulai')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -398,20 +472,23 @@ class WorkspaceInfolist
                                             ->requiresConfirmation()
                                             ->modalDescription('Apakah Anda yakin hasil Entry SIHALAL sudah benar dan lengkap? Tindakan ini akan menyetujui Entry.')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                                return $task && $task->status === TaskStatus::IN_PROGRESS;
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\SpvEntryWorkflowService::class)->approve($task, Auth::user());
+                                                    app(SpvEntryWorkflowService::class)->approve($task, Auth::user());
                                                     Notification::make()->title('Entry Disetujui')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -423,26 +500,29 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-arrow-uturn-left')
                                             ->color('danger')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                                return $task && $task->status === TaskStatus::IN_PROGRESS;
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Textarea::make('reason')
+                                                Textarea::make('reason')
                                                     ->label('Alasan Revisi')
                                                     ->required()
                                                     ->helperText('Jelaskan bagian mana yang perlu diperbaiki oleh Entry.'),
                                             ])
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::SPV_ENTRY_REVIEW->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\SpvEntryWorkflowService::class)->requestRevision($task, Auth::user(), $data['reason']);
+                                                    app(SpvEntryWorkflowService::class)->requestRevision($task, Auth::user(), $data['reason']);
                                                     Notification::make()->title('Revisi diminta')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -450,33 +530,38 @@ class WorkspaceInfolist
                                             }),
                                     ])
                                     ->columnSpan(1),
-                                
+
                                 Section::make('Perencanaan Audit')
                                     ->schema([
                                         TextEntry::make('audit_schedule')
                                             ->label('Jadwal Audit')
                                             ->state(function ($record) {
-                                                $plan = \App\Modules\Workflows\Models\AuditPlan::where('project_id', $record->project?->id)->first();
-                                                if (!$plan || !$plan->scheduled_start_at) return 'Belum dijadwalkan';
-                                                
+                                                $plan = AuditPlan::where('project_id', $record->project?->id)->first();
+                                                if (! $plan || ! $plan->scheduled_start_at) {
+                                                    return 'Belum dijadwalkan';
+                                                }
+
                                                 $method = $plan->audit_method?->label() ?? '-';
-                                                return $plan->scheduled_start_at->format('d M Y H:i') . ' s/d ' . ($plan->scheduled_end_at ? $plan->scheduled_end_at->format('d M Y H:i') : '-') . " ($method)";
+
+                                                return $plan->scheduled_start_at->format('d M Y H:i').' s/d '.($plan->scheduled_end_at ? $plan->scheduled_end_at->format('d M Y H:i') : '-')." ($method)";
                                             }),
                                         TextEntry::make('audit_status')
                                             ->label('Status Audit')
                                             ->state(function ($record) {
-                                                $step = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project?->id)
+                                                $step = WorkflowStep::where('project_id', $record->project?->id)
                                                     ->where('step_code', 'COMPANION_PROGRESS')->first();
-                                                return $step ? \App\Modules\Workflows\Enums\WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
+
+                                                return $step ? WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
                                             })
                                             ->badge(),
                                         TextEntry::make('primary_auditor')
                                             ->label('Auditor Utama')
                                             ->state(function ($record) {
                                                 $assignment = $record->project?->assignments()
-                                                    ->where('assignment_role', \App\Modules\Projects\Enums\AssignmentRole::AUDITOR->value)
+                                                    ->where('assignment_role', AssignmentRole::AUDITOR->value)
                                                     ->where('is_primary', true)
                                                     ->whereNull('ended_at')->first();
+
                                                 return $assignment?->user?->name ?? 'Belum ditentukan';
                                             }),
                                     ])
@@ -486,20 +571,23 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-play')
                                             ->color('primary')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::TODO;
+
+                                                return $task && $task->status === TaskStatus::TODO;
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditPlanningService::class)->startPlanning($task, Auth::user());
+                                                    app(AuditPlanningService::class)->startPlanning($task, Auth::user());
                                                     Notification::make()->title('Perencanaan dimulai')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -510,23 +598,27 @@ class WorkspaceInfolist
                                             ->label('Update Draft Plan')
                                             ->icon('heroicon-o-pencil-square')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                                return $task && $task->status === TaskStatus::IN_PROGRESS;
                                             })
                                             ->form(function ($record) {
-                                                $plan = \App\Modules\Workflows\Models\AuditPlan::where('project_id', $record->project->id)->first();
+                                                $plan = AuditPlan::where('project_id', $record->project->id)->first();
+
                                                 return [
-                                                    \Filament\Forms\Components\DateTimePicker::make('scheduled_start_at')
+                                                    DateTimePicker::make('scheduled_start_at')
                                                         ->label('Mulai')
                                                         ->default($plan?->scheduled_start_at),
-                                                    \Filament\Forms\Components\DateTimePicker::make('scheduled_end_at')
+                                                    DateTimePicker::make('scheduled_end_at')
                                                         ->label('Selesai')
                                                         ->default($plan?->scheduled_end_at),
-                                                    \Filament\Forms\Components\Select::make('timezone')
+                                                    Select::make('timezone')
                                                         ->label('Zona Waktu')
                                                         ->options([
                                                             'Asia/Jakarta' => 'WIB (Asia/Jakarta)',
@@ -534,7 +626,7 @@ class WorkspaceInfolist
                                                             'Asia/Jayapura' => 'WIT (Asia/Jayapura)',
                                                         ])
                                                         ->default($plan?->timezone ?? 'Asia/Jakarta'),
-                                                    \Filament\Forms\Components\Select::make('audit_method')
+                                                    Select::make('audit_method')
                                                         ->label('Metode Audit')
                                                         ->options([
                                                             'ONLINE' => 'Online',
@@ -542,27 +634,27 @@ class WorkspaceInfolist
                                                         ])
                                                         ->default($plan?->audit_method?->value)
                                                         ->reactive(),
-                                                    \Filament\Forms\Components\TextInput::make('meeting_url')
+                                                    TextInput::make('meeting_url')
                                                         ->label('Link Pertemuan')
                                                         ->url()
-                                                        ->visible(fn (\Filament\Forms\Get $get) => $get('audit_method') === 'ONLINE')
+                                                        ->visible(fn (Get $get) => $get('audit_method') === 'ONLINE')
                                                         ->default($plan?->meeting_url),
-                                                    \Filament\Forms\Components\Textarea::make('location')
+                                                    Textarea::make('location')
                                                         ->label('Lokasi Fisik')
-                                                        ->visible(fn (\Filament\Forms\Get $get) => $get('audit_method') === 'ONSITE')
+                                                        ->visible(fn (Get $get) => $get('audit_method') === 'ONSITE')
                                                         ->default($plan?->location),
-                                                    \Filament\Forms\Components\Textarea::make('notes')
+                                                    Textarea::make('notes')
                                                         ->label('Catatan Tambahan')
                                                         ->default($plan?->notes),
                                                 ];
                                             })
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditPlanningService::class)->saveDraftPlan($task, Auth::user(), $data);
+                                                    app(AuditPlanningService::class)->saveDraftPlan($task, Auth::user(), $data);
                                                     Notification::make()->title('Draft disimpan')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -573,46 +665,54 @@ class WorkspaceInfolist
                                             ->label('Persiapan Audit')
                                             ->icon('heroicon-o-clipboard-document-check')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                                return $task && $task->status === TaskStatus::IN_PROGRESS;
                                             })
                                             ->form(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                if (!$task) return [];
+
+                                                if (! $task) {
+                                                    return [];
+                                                }
 
                                                 $items = $task->checklistItems()->orderBy('sort_order')->get();
-                                                
+
                                                 $schema = [];
                                                 foreach ($items as $item) {
-                                                    $schema[] = \Filament\Forms\Components\Checkbox::make('checklist_' . $item->id)
-                                                        ->label($item->label . ($item->is_required ? ' *' : ''))
+                                                    $schema[] = Checkbox::make('checklist_'.$item->id)
+                                                        ->label($item->label.($item->is_required ? ' *' : ''))
                                                         ->default($item->is_completed);
                                                 }
-                                                return empty($schema) ? [\Filament\Forms\Components\Placeholder::make('info')->content('Draft rencana belum diisi atau metode audit belum dipilih.')] : $schema;
+
+                                                return empty($schema) ? [Placeholder::make('info')->content('Draft rencana belum diisi atau metode audit belum dipilih.')] : $schema;
                                             })
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                if (!$task) return;
+
+                                                if (! $task) {
+                                                    return;
+                                                }
 
                                                 $items = $task->checklistItems;
                                                 foreach ($items as $item) {
-                                                    $key = 'checklist_' . $item->id;
+                                                    $key = 'checklist_'.$item->id;
                                                     if (isset($data[$key])) {
                                                         $wasCompleted = $item->is_completed;
                                                         $isCompleted = (bool) $data[$key];
-                                                        
+
                                                         if ($wasCompleted !== $isCompleted) {
                                                             $item->is_completed = $isCompleted;
                                                             $item->completed_by = $isCompleted ? Auth::id() : null;
@@ -631,20 +731,23 @@ class WorkspaceInfolist
                                             ->requiresConfirmation()
                                             ->modalDescription('Apakah Anda yakin jadwal dan persiapan audit sudah final? Tindakan ini akan mengunci rencana audit dan menginformasikan auditor.')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                                return $task && $task->status === TaskStatus::IN_PROGRESS;
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_PLANNING->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_PLANNING->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditPlanningService::class)->confirmSchedule($task, Auth::user());
+                                                    app(AuditPlanningService::class)->confirmSchedule($task, Auth::user());
                                                     Notification::make()->title('Jadwal Dikonfirmasi')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -656,35 +759,38 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-clock')
                                             ->color('warning')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $tracker = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project->id)
-                                                    ->where('step_code', 'COMPANION_PROGRESS')->first();
-                                                
-                                                if (!$tracker || !in_array($tracker->status->value, [\App\Modules\Workflows\Enums\WorkflowStatus::AUDIT_SCHEDULED->value, \App\Modules\Workflows\Enums\WorkflowStatus::AUDIT_PREPARATION->value, \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_AUDIT_SCHEDULE->value])) {
+                                                if (! $record->project) {
                                                     return false;
                                                 }
-                                                
+                                                $tracker = WorkflowStep::where('project_id', $record->project->id)
+                                                    ->where('step_code', 'COMPANION_PROGRESS')->first();
+
+                                                if (! $tracker || ! in_array($tracker->status->value, [WorkflowStatus::AUDIT_SCHEDULED->value, WorkflowStatus::AUDIT_PREPARATION->value, WorkflowStatus::WAITING_AUDIT_SCHEDULE->value])) {
+                                                    return false;
+                                                }
+
                                                 // Only Pendamping can reschedule
                                                 $assignment = $record->project->assignments()
-                                                    ->where('assignment_role', \App\Modules\Projects\Enums\AssignmentRole::PENDAMPING_AUDITOR->value)
+                                                    ->where('assignment_role', AssignmentRole::PENDAMPING_AUDITOR->value)
                                                     ->where('user_id', Auth::id())
                                                     ->whereNull('ended_at')
                                                     ->first();
-                                                    
+
                                                 return $assignment !== null;
                                             })
                                             ->form(function ($record) {
-                                                $plan = \App\Modules\Workflows\Models\AuditPlan::where('project_id', $record->project->id)->first();
+                                                $plan = AuditPlan::where('project_id', $record->project->id)->first();
+
                                                 return [
-                                                    \Filament\Forms\Components\DateTimePicker::make('scheduled_start_at')
+                                                    DateTimePicker::make('scheduled_start_at')
                                                         ->label('Mulai')
                                                         ->required()
                                                         ->default($plan?->scheduled_start_at),
-                                                    \Filament\Forms\Components\DateTimePicker::make('scheduled_end_at')
+                                                    DateTimePicker::make('scheduled_end_at')
                                                         ->label('Selesai')
                                                         ->required()
                                                         ->default($plan?->scheduled_end_at),
-                                                    \Filament\Forms\Components\Select::make('timezone')
+                                                    Select::make('timezone')
                                                         ->label('Zona Waktu')
                                                         ->options([
                                                             'Asia/Jakarta' => 'WIB (Asia/Jakarta)',
@@ -693,7 +799,7 @@ class WorkspaceInfolist
                                                         ])
                                                         ->required()
                                                         ->default($plan?->timezone ?? 'Asia/Jakarta'),
-                                                    \Filament\Forms\Components\Select::make('audit_method')
+                                                    Select::make('audit_method')
                                                         ->label('Metode Audit')
                                                         ->options([
                                                             'ONLINE' => 'Online',
@@ -702,54 +808,57 @@ class WorkspaceInfolist
                                                         ->required()
                                                         ->default($plan?->audit_method?->value)
                                                         ->reactive(),
-                                                    \Filament\Forms\Components\TextInput::make('meeting_url')
+                                                    TextInput::make('meeting_url')
                                                         ->label('Link Pertemuan')
                                                         ->url()
-                                                        ->visible(fn (\Filament\Forms\Get $get) => $get('audit_method') === 'ONLINE')
+                                                        ->visible(fn (Get $get) => $get('audit_method') === 'ONLINE')
                                                         ->default($plan?->meeting_url),
-                                                    \Filament\Forms\Components\Textarea::make('location')
+                                                    Textarea::make('location')
                                                         ->label('Lokasi Fisik')
-                                                        ->visible(fn (\Filament\Forms\Get $get) => $get('audit_method') === 'ONSITE')
+                                                        ->visible(fn (Get $get) => $get('audit_method') === 'ONSITE')
                                                         ->default($plan?->location),
-                                                    \Filament\Forms\Components\Textarea::make('reason')
+                                                    Textarea::make('reason')
                                                         ->label('Alasan Perubahan')
                                                         ->required(),
                                                 ];
                                             })
                                             ->action(function (array $data, $record) {
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditPlanningService::class)->reschedule($record->project, Auth::user(), $data, $data['reason']);
+                                                    app(AuditPlanningService::class)->reschedule($record->project, Auth::user(), $data, $data['reason']);
                                                     Notification::make()->title('Jadwal diubah')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                                 }
                                             }),
-                                            
+
                                         Action::make('kelola_auditor')
                                             ->label('Kelola Auditor')
                                             ->icon('heroicon-o-users')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
                                                 $assignment = $record->project->assignments()
-                                                    ->where('assignment_role', \App\Modules\Projects\Enums\AssignmentRole::PENDAMPING_AUDITOR->value)
+                                                    ->where('assignment_role', AssignmentRole::PENDAMPING_AUDITOR->value)
                                                     ->where('user_id', Auth::id())
                                                     ->whereNull('ended_at')
                                                     ->first();
+
                                                 return $assignment !== null;
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Select::make('auditor_id')
+                                                Select::make('auditor_id')
                                                     ->label('Auditor')
-                                                    ->options(\App\Models\User::where('status', 'ACTIVE')->get()->filter(fn($u) => $u->hasRole('Auditor'))->pluck('name', 'id'))
+                                                    ->options(User::where('status', 'ACTIVE')->get()->filter(fn ($u) => $u->hasRole('Auditor'))->pluck('name', 'id'))
                                                     ->searchable()
                                                     ->required(),
-                                                \Filament\Forms\Components\Toggle::make('is_primary')
+                                                Toggle::make('is_primary')
                                                     ->label('Jadikan Auditor Utama'),
                                             ])
                                             ->action(function (array $data, $record) {
                                                 try {
-                                                    $auditorUser = \App\Models\User::find($data['auditor_id']);
-                                                    app(\App\Modules\Projects\Services\AssignmentService::class)->assignAuditor($record->project, $auditorUser, $data['is_primary']);
+                                                    $auditorUser = User::find($data['auditor_id']);
+                                                    app(AssignmentService::class)->assignAuditor($record->project, $auditorUser, $data['is_primary']);
                                                     Notification::make()->title('Auditor ditetapkan')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -757,29 +866,36 @@ class WorkspaceInfolist
                                             }),
                                     ])
                                     ->columnSpan(1),
-                                    
+
                                 Section::make('Pelaksanaan Audit')
                                     ->schema([
                                         TextEntry::make('execution_status')
                                             ->label('Status Pendampingan')
                                             ->state(function ($record) {
-                                                $step = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project?->id)
+                                                $step = WorkflowStep::where('project_id', $record->project?->id)
                                                     ->where('step_code', 'COMPANION_PROGRESS')->first();
-                                                return $step ? \App\Modules\Workflows\Enums\WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
+
+                                                return $step ? WorkflowStatus::from($step->status)->getLabel() : 'Belum Mulai';
                                             })
                                             ->badge(),
                                         TextEntry::make('execution_summary')
                                             ->label('Ringkasan Pelaksanaan')
                                             ->state(function ($record) {
-                                                $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project?->id)->first();
+                                                $execution = AuditExecution::where('project_id', $record->project?->id)->first();
+
                                                 return $execution?->summary ?? 'Belum ada ringkasan';
                                             }),
                                         TextEntry::make('execution_findings')
                                             ->label('Status Temuan')
                                             ->state(function ($record) {
-                                                $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project?->id)->first();
-                                                if (!$execution) return '-';
-                                                if ($execution->has_findings === null) return 'Belum dikonfirmasi';
+                                                $execution = AuditExecution::where('project_id', $record->project?->id)->first();
+                                                if (! $execution) {
+                                                    return '-';
+                                                }
+                                                if ($execution->has_findings === null) {
+                                                    return 'Belum dikonfirmasi';
+                                                }
+
                                                 return $execution->has_findings ? 'Ada Temuan' : 'Tidak Ada Temuan';
                                             })
                                             ->badge()
@@ -795,20 +911,23 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-play')
                                             ->color('primary')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::TODO;
+
+                                                return $task && $task->status === TaskStatus::TODO;
                                             })
                                             ->action(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->startExecution($task, Auth::user());
+                                                    app(AuditExecutionService::class)->startExecution($task, Auth::user());
                                                     Notification::make()->title('Pelaksanaan audit dimulai')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -819,31 +938,34 @@ class WorkspaceInfolist
                                             ->label('Update Status Pendamping')
                                             ->icon('heroicon-o-arrow-path')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Select::make('new_status')
+                                                Select::make('new_status')
                                                     ->label('Status Baru')
                                                     ->options([
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::AUDIT_IN_PROGRESS->value => 'Audit Sedang Berjalan',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::FIELD_EVIDENCE_INCOMPLETE->value => 'Bukti Lapangan Belum Lengkap',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::AUDIT_COMPLETED->value => 'Audit Selesai',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_CLIENT_CORRECTION->value => 'Menunggu Perbaikan Klien',
+                                                        WorkflowStatus::AUDIT_IN_PROGRESS->value => 'Audit Sedang Berjalan',
+                                                        WorkflowStatus::FIELD_EVIDENCE_INCOMPLETE->value => 'Bukti Lapangan Belum Lengkap',
+                                                        WorkflowStatus::AUDIT_COMPLETED->value => 'Audit Selesai',
+                                                        WorkflowStatus::WAITING_CLIENT_CORRECTION->value => 'Menunggu Perbaikan Klien',
                                                     ])
                                                     ->required(),
-                                                \Filament\Forms\Components\Textarea::make('reason')
+                                                Textarea::make('reason')
                                                     ->label('Alasan (opsional)')
                                                     ->helperText('Wajib diisi jika Anda menurunkan status (mundur).'),
                                             ])
                                             ->action(function (array $data, $record) {
                                                 try {
-                                                    $statusEnum = \App\Modules\Workflows\Enums\WorkflowStatus::from($data['new_status']);
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->updateCompanionStatus(
+                                                    $statusEnum = WorkflowStatus::from($data['new_status']);
+                                                    app(AuditExecutionService::class)->updateCompanionStatus(
                                                         $record->project,
                                                         Auth::user(),
                                                         $statusEnum,
@@ -859,38 +981,46 @@ class WorkspaceInfolist
                                             ->label('Checklist Pelaksanaan')
                                             ->icon('heroicon-o-check-circle')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form(function ($record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                
-                                                if (!$task) return [];
+
+                                                if (! $task) {
+                                                    return [];
+                                                }
                                                 $items = $task->checklistItems()->orderBy('sort_order')->get();
                                                 $schema = [];
                                                 foreach ($items as $item) {
-                                                    $schema[] = \Filament\Forms\Components\Checkbox::make('checklist_' . $item->id)
-                                                        ->label($item->label . ($item->is_required ? ' *' : ''))
+                                                    $schema[] = Checkbox::make('checklist_'.$item->id)
+                                                        ->label($item->label.($item->is_required ? ' *' : ''))
                                                         ->default($item->is_completed);
                                                 }
+
                                                 return $schema;
                                             })
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                if (!$task) return;
+                                                if (! $task) {
+                                                    return;
+                                                }
                                                 $items = $task->checklistItems;
                                                 foreach ($items as $item) {
-                                                    $key = 'checklist_' . $item->id;
+                                                    $key = 'checklist_'.$item->id;
                                                     if (isset($data[$key])) {
                                                         $wasCompleted = $item->is_completed;
                                                         $isCompleted = (bool) $data[$key];
@@ -910,28 +1040,31 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-plus-circle')
                                             ->color('warning')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\Textarea::make('description')
+                                                Textarea::make('description')
                                                     ->label('Deskripsi Temuan')
                                                     ->required(),
-                                                \Filament\Forms\Components\Toggle::make('evidence_required')
+                                                Toggle::make('evidence_required')
                                                     ->label('Wajib Melampirkan Bukti?')
                                                     ->default(true),
                                             ])
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->addFinding($task, Auth::user(), $data);
+                                                    app(AuditExecutionService::class)->addFinding($task, Auth::user(), $data);
                                                     Notification::make()->title('Temuan ditambahkan')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -943,38 +1076,45 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-trash')
                                             ->color('danger')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form(function ($record) {
-                                                $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project->id)->first();
-                                                if (!$execution) return [];
-                                                
-                                                $findings = \App\Modules\Workflows\Models\AuditFinding::where('audit_execution_id', $execution->id)
-                                                    ->where('status', \App\Modules\Workflows\Enums\AuditFindingStatus::OPEN->value)
+                                                $execution = AuditExecution::where('project_id', $record->project->id)->first();
+                                                if (! $execution) {
+                                                    return [];
+                                                }
+
+                                                $findings = AuditFinding::where('audit_execution_id', $execution->id)
+                                                    ->where('status', AuditFindingStatus::OPEN->value)
                                                     ->get()
-                                                    ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number . ' - ' . \Illuminate\Support\Str::limit($item->description, 50)]);
-                                                    
+                                                    ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number.' - '.Str::limit($item->description, 50)]);
+
                                                 return [
-                                                    \Filament\Forms\Components\Select::make('finding_id')
+                                                    Select::make('finding_id')
                                                         ->label('Pilih Temuan')
                                                         ->options($findings)
                                                         ->required(),
-                                                    \Filament\Forms\Components\Textarea::make('reason')
+                                                    Textarea::make('reason')
                                                         ->label('Alasan Pembatalan')
                                                         ->required(),
                                                 ];
                                             })
                                             ->action(function (array $data, $record) {
-                                                $finding = \App\Modules\Workflows\Models\AuditFinding::find($data['finding_id']);
-                                                if (!$finding) return;
-                                                
+                                                $finding = AuditFinding::find($data['finding_id']);
+                                                if (! $finding) {
+                                                    return;
+                                                }
+
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->voidFinding($finding, Auth::user(), $data['reason']);
+                                                    app(AuditExecutionService::class)->voidFinding($finding, Auth::user(), $data['reason']);
                                                     Notification::make()->title('Temuan dibatalkan')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -986,29 +1126,34 @@ class WorkspaceInfolist
                                             ->icon('heroicon-o-arrow-up-tray')
                                             ->color('info')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form(function ($record) {
-                                                $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project->id)->first();
-                                                if (!$execution) return [];
-                                                
-                                                $findings = \App\Modules\Workflows\Models\AuditFinding::where('audit_execution_id', $execution->id)
-                                                    ->where('status', \App\Modules\Workflows\Enums\AuditFindingStatus::OPEN->value)
+                                                $execution = AuditExecution::where('project_id', $record->project->id)->first();
+                                                if (! $execution) {
+                                                    return [];
+                                                }
+
+                                                $findings = AuditFinding::where('audit_execution_id', $execution->id)
+                                                    ->where('status', AuditFindingStatus::OPEN->value)
                                                     ->where('evidence_required', true)
                                                     ->get()
-                                                    ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number . ' - ' . \Illuminate\Support\Str::limit($item->description, 50)]);
-                                                    
+                                                    ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number.' - '.Str::limit($item->description, 50)]);
+
                                                 return [
-                                                    \Filament\Forms\Components\Select::make('finding_id')
+                                                    Select::make('finding_id')
                                                         ->label('Pilih Temuan')
                                                         ->options($findings)
                                                         ->required(),
-                                                    \Filament\Forms\Components\FileUpload::make('evidence')
+                                                    FileUpload::make('evidence')
                                                         ->label('Bukti Temuan')
                                                         ->required()
                                                         ->maxSize(10240)
@@ -1016,14 +1161,16 @@ class WorkspaceInfolist
                                                 ];
                                             })
                                             ->action(function (array $data, $record) {
-                                                $finding = \App\Modules\Workflows\Models\AuditFinding::find($data['finding_id']);
-                                                if (!$finding) return;
-                                                
+                                                $finding = AuditFinding::find($data['finding_id']);
+                                                if (! $finding) {
+                                                    return;
+                                                }
+
                                                 try {
                                                     $file = is_array($data['evidence']) ? array_values($data['evidence'])[0] : $data['evidence'];
-                                                    $fileUrl = storage_path('app/public/' . $file); 
-                                                    
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->attachFindingEvidence($finding, Auth::user(), $fileUrl);
+                                                    $fileUrl = storage_path('app/public/'.$file);
+
+                                                    app(AuditExecutionService::class)->attachFindingEvidence($finding, Auth::user(), $fileUrl);
                                                     Notification::make()->title('Bukti temuan diunggah')->success()->send();
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
@@ -1037,33 +1184,37 @@ class WorkspaceInfolist
                                             ->requiresConfirmation()
                                             ->modalDescription('Apakah Anda yakin eksekusi audit telah selesai? Hasil akan diserahkan ke Auditor untuk di-review.')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
-                                                return $task && in_array($task->status, [\App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS, \App\Modules\Workflows\Enums\TaskStatus::REVISION]);
+
+                                                return $task && in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION]);
                                             })
                                             ->form(function ($record) {
-                                                $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project->id)->first();
+                                                $execution = AuditExecution::where('project_id', $record->project->id)->first();
+
                                                 return [
-                                                    \Filament\Forms\Components\Textarea::make('summary')
+                                                    Textarea::make('summary')
                                                         ->label('Ringkasan Audit')
                                                         ->required()
                                                         ->default($execution?->summary),
-                                                    \Filament\Forms\Components\Toggle::make('has_findings')
+                                                    Toggle::make('has_findings')
                                                         ->label('Terdapat Temuan?')
                                                         ->required()
                                                         ->default($execution?->has_findings ?? false),
                                                 ];
                                             })
                                             ->action(function (array $data, $record) {
-                                                $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                                    ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDIT_EXECUTION->value)
+                                                $task = Task::where('project_id', $record->project->id)
+                                                    ->where('task_type', TaskType::AUDIT_EXECUTION->value)
                                                     ->where('assigned_to', Auth::id())
                                                     ->first();
                                                 try {
-                                                    app(\App\Modules\Workflows\Services\AuditExecutionService::class)->submitToAuditor($task, Auth::user(), $data);
+                                                    app(AuditExecutionService::class)->submitToAuditor($task, Auth::user(), $data);
                                                 } catch (\Exception $e) {
                                                     Notification::make()->title('Gagal submit')->body($e->getMessage())->danger()->send();
                                                 }
@@ -1073,216 +1224,237 @@ class WorkspaceInfolist
                             ]),
                         ]),
 
-                    \Filament\Infolists\Components\Section::make('Review Auditor')
+                    Section::make('Review Auditor')
                         ->description('Review hasil eksekusi audit dan berikan keputusan.')
                         ->schema([
-                            \Filament\Infolists\Components\Actions::make([
-                                \Filament\Infolists\Components\Actions\Action::make('mulai_review')
+                            Actions::make([
+                                Action::make('mulai_review')
                                     ->label('Mulai Review')
                                     ->icon('heroicon-o-play')
                                     ->color('primary')
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
-                                        return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::TODO;
+
+                                        return $task && $task->status === TaskStatus::TODO;
                                     })
                                     ->action(function ($record) {
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
                                         try {
-                                            app(\App\Modules\Workflows\Services\AuditorReviewService::class)->startReview($task, \Illuminate\Support\Facades\Auth::user());
-                                            \Filament\Notifications\Notification::make()->title('Review dimulai')->success()->send();
+                                            app(AuditorReviewService::class)->startReview($task, Auth::user());
+                                            Notification::make()->title('Review dimulai')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal memulai')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal memulai')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
 
-                                \Filament\Infolists\Components\Actions\Action::make('update_status_auditor')
+                                Action::make('update_status_auditor')
                                     ->label('Update Status Auditor')
                                     ->icon('heroicon-o-arrow-path')
                                     ->color('info')
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        $tracker = \App\Modules\Workflows\Models\WorkflowStep::where('project_id', $record->project->id)
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+                                        $tracker = WorkflowStep::where('project_id', $record->project->id)
                                             ->where('step_code', 'AUDITOR_REVIEW')
                                             ->first();
-                                        if (!$tracker) return false;
-                                        
-                                        $assignment = \App\Modules\Projects\Models\ProjectAssignment::where('project_id', $record->project->id)
-                                            ->where('assignment_role', \App\Modules\Projects\Enums\AssignmentRole::AUDITOR->value)
-                                            ->where('user_id', \Illuminate\Support\Facades\Auth::id())
+                                        if (! $tracker) {
+                                            return false;
+                                        }
+
+                                        $assignment = ProjectAssignment::where('project_id', $record->project->id)
+                                            ->where('assignment_role', AssignmentRole::AUDITOR->value)
+                                            ->where('user_id', Auth::id())
                                             ->whereNull('ended_at')
                                             ->first();
-                                            
-                                        return $assignment && !in_array($tracker->status, [
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::AUDIT_REPORT_COMPLETED,
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_FATWA_SESSION,
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::FATWA_SESSION_COMPLETED,
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_BPJPH_ISSUANCE,
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::HALAL_CERTIFICATE_ISSUED,
+
+                                        return $assignment && ! in_array($tracker->status, [
+                                            WorkflowStatus::AUDIT_REPORT_COMPLETED,
+                                            WorkflowStatus::WAITING_FATWA_SESSION,
+                                            WorkflowStatus::FATWA_SESSION_COMPLETED,
+                                            WorkflowStatus::WAITING_BPJPH_ISSUANCE,
+                                            WorkflowStatus::HALAL_CERTIFICATE_ISSUED,
                                         ]);
                                     })
                                     ->form(function ($record) {
                                         $options = [
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::AUDITOR_NOT_PROCESSED->value => \App\Modules\Workflows\Enums\WorkflowStatus::AUDITOR_NOT_PROCESSED->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::DOCUMENT_REVIEW->value => \App\Modules\Workflows\Enums\WorkflowStatus::DOCUMENT_REVIEW->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_FIELD_AUDIT->value => \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_FIELD_AUDIT->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::FIELD_AUDIT_COMPLETED->value => \App\Modules\Workflows\Enums\WorkflowStatus::FIELD_AUDIT_COMPLETED->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::NONCONFORMITY_FOUND->value => \App\Modules\Workflows\Enums\WorkflowStatus::NONCONFORMITY_FOUND->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_CORRECTIVE_EVIDENCE->value => \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_CORRECTIVE_EVIDENCE->getLabel(),
-                                            \App\Modules\Workflows\Enums\WorkflowStatus::CORRECTION_ACCEPTED->value => \App\Modules\Workflows\Enums\WorkflowStatus::CORRECTION_ACCEPTED->getLabel(),
+                                            WorkflowStatus::AUDITOR_NOT_PROCESSED->value => WorkflowStatus::AUDITOR_NOT_PROCESSED->getLabel(),
+                                            WorkflowStatus::DOCUMENT_REVIEW->value => WorkflowStatus::DOCUMENT_REVIEW->getLabel(),
+                                            WorkflowStatus::WAITING_FIELD_AUDIT->value => WorkflowStatus::WAITING_FIELD_AUDIT->getLabel(),
+                                            WorkflowStatus::FIELD_AUDIT_COMPLETED->value => WorkflowStatus::FIELD_AUDIT_COMPLETED->getLabel(),
+                                            WorkflowStatus::NONCONFORMITY_FOUND->value => WorkflowStatus::NONCONFORMITY_FOUND->getLabel(),
+                                            WorkflowStatus::WAITING_CORRECTIVE_EVIDENCE->value => WorkflowStatus::WAITING_CORRECTIVE_EVIDENCE->getLabel(),
+                                            WorkflowStatus::CORRECTION_ACCEPTED->value => WorkflowStatus::CORRECTION_ACCEPTED->getLabel(),
                                         ];
+
                                         return [
-                                            \Filament\Forms\Components\Select::make('status')
+                                            Select::make('status')
                                                 ->label('Status Auditor')
                                                 ->options($options)
                                                 ->required(),
-                                            \Filament\Forms\Components\Textarea::make('reason')
+                                            Textarea::make('reason')
                                                 ->label('Alasan (Wajib jika turun status)')
                                                 ->nullable(),
                                         ];
                                     })
                                     ->action(function (array $data, $record) {
                                         try {
-                                            $status = \App\Modules\Workflows\Enums\WorkflowStatus::from($data['status']);
-                                            app(\App\Modules\Workflows\Services\AuditorReviewService::class)->updateAuditorStatus($record->project, \Illuminate\Support\Facades\Auth::user(), $status, $data['reason']);
-                                            \Filament\Notifications\Notification::make()->title('Status diperbarui')->success()->send();
+                                            $status = WorkflowStatus::from($data['status']);
+                                            app(AuditorReviewService::class)->updateAuditorStatus($record->project, Auth::user(), $status, $data['reason']);
+                                            Notification::make()->title('Status diperbarui')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
 
-                                \Filament\Infolists\Components\Actions\Action::make('review_temuan')
+                                Action::make('review_temuan')
                                     ->label('Review Temuan')
                                     ->icon('heroicon-o-magnifying-glass')
                                     ->color('warning')
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
-                                        return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                        return $task && $task->status === TaskStatus::IN_PROGRESS;
                                     })
                                     ->form(function ($record) {
-                                        $execution = \App\Modules\Workflows\Models\AuditExecution::where('project_id', $record->project->id)->first();
-                                        if (!$execution) return [];
-                                        
-                                        $findings = \App\Modules\Workflows\Models\AuditFinding::where('audit_execution_id', $execution->id)
+                                        $execution = AuditExecution::where('project_id', $record->project->id)->first();
+                                        if (! $execution) {
+                                            return [];
+                                        }
+
+                                        $findings = AuditFinding::where('audit_execution_id', $execution->id)
                                             ->whereIn('status', [
-                                                \App\Modules\Workflows\Enums\AuditFindingStatus::OPEN->value,
-                                                \App\Modules\Workflows\Enums\AuditFindingStatus::EVIDENCE_SUBMITTED->value,
+                                                AuditFindingStatus::OPEN->value,
+                                                AuditFindingStatus::EVIDENCE_SUBMITTED->value,
                                             ])
                                             ->get()
-                                            ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number . ' - ' . \Illuminate\Support\Str::limit($item->description, 50) . ' (' . $item->status->getLabel() . ')']);
-                                            
+                                            ->mapWithKeys(fn ($item) => [$item->id => $item->finding_number.' - '.Str::limit($item->description, 50).' ('.$item->status->getLabel().')']);
+
                                         return [
-                                            \Filament\Forms\Components\Select::make('finding_id')
+                                            Select::make('finding_id')
                                                 ->label('Pilih Temuan')
                                                 ->options($findings)
                                                 ->required(),
-                                            \Filament\Forms\Components\Select::make('status')
+                                            Select::make('status')
                                                 ->label('Keputusan')
                                                 ->options([
-                                                    \App\Modules\Workflows\Enums\AuditFindingStatus::ACCEPTED->value => 'Terima Bukti/Temuan (ACCEPTED)',
-                                                    \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value => 'Minta Koreksi (CORRECTION_REQUIRED)',
+                                                    AuditFindingStatus::ACCEPTED->value => 'Terima Bukti/Temuan (ACCEPTED)',
+                                                    AuditFindingStatus::CORRECTION_REQUIRED->value => 'Minta Koreksi (CORRECTION_REQUIRED)',
                                                 ])
                                                 ->required()
                                                 ->reactive(),
-                                            \Filament\Forms\Components\Textarea::make('resolution_notes')
+                                            Textarea::make('resolution_notes')
                                                 ->label('Instruksi Koreksi')
-                                                ->required(fn (\Filament\Forms\Get $get) => $get('status') === \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value)
-                                                ->visible(fn (\Filament\Forms\Get $get) => $get('status') === \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value),
-                                            \Filament\Forms\Components\Select::make('correction_owner')
+                                                ->required(fn (Get $get) => $get('status') === AuditFindingStatus::CORRECTION_REQUIRED->value)
+                                                ->visible(fn (Get $get) => $get('status') === AuditFindingStatus::CORRECTION_REQUIRED->value),
+                                            Select::make('correction_owner')
                                                 ->label('Pihak Bertanggung Jawab')
                                                 ->options([
-                                                    \App\Modules\Workflows\Enums\AuditFindingCorrectionOwner::CLIENT->value => 'Klien',
-                                                    \App\Modules\Workflows\Enums\AuditFindingCorrectionOwner::PHC_INTERNAL->value => 'PHC (Internal)',
+                                                    AuditFindingCorrectionOwner::CLIENT->value => 'Klien',
+                                                    AuditFindingCorrectionOwner::PHC_INTERNAL->value => 'PHC (Internal)',
                                                 ])
-                                                ->required(fn (\Filament\Forms\Get $get) => $get('status') === \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value)
-                                                ->visible(fn (\Filament\Forms\Get $get) => $get('status') === \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value),
-                                            \Filament\Forms\Components\Toggle::make('evidence_required')
+                                                ->required(fn (Get $get) => $get('status') === AuditFindingStatus::CORRECTION_REQUIRED->value)
+                                                ->visible(fn (Get $get) => $get('status') === AuditFindingStatus::CORRECTION_REQUIRED->value),
+                                            Toggle::make('evidence_required')
                                                 ->label('Bukti Perbaikan Diwajibkan?')
-                                                ->visible(fn (\Filament\Forms\Get $get) => $get('status') === \App\Modules\Workflows\Enums\AuditFindingStatus::CORRECTION_REQUIRED->value)
+                                                ->visible(fn (Get $get) => $get('status') === AuditFindingStatus::CORRECTION_REQUIRED->value)
                                                 ->default(true),
                                         ];
                                     })
                                     ->action(function (array $data, $record) {
-                                        $finding = \App\Modules\Workflows\Models\AuditFinding::find($data['finding_id']);
-                                        if (!$finding) return;
-                                        
+                                        $finding = AuditFinding::find($data['finding_id']);
+                                        if (! $finding) {
+                                            return;
+                                        }
+
                                         try {
-                                            $status = \App\Modules\Workflows\Enums\AuditFindingStatus::from($data['status']);
-                                            app(\App\Modules\Workflows\Services\AuditorReviewService::class)->reviewFinding($finding, \Illuminate\Support\Facades\Auth::user(), $status, $data);
-                                            \Filament\Notifications\Notification::make()->title('Temuan di-review')->success()->send();
+                                            $status = AuditFindingStatus::from($data['status']);
+                                            app(AuditorReviewService::class)->reviewFinding($finding, Auth::user(), $status, $data);
+                                            Notification::make()->title('Temuan di-review')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
 
-                                \Filament\Infolists\Components\Actions\Action::make('kembalikan_untuk_revisi')
+                                Action::make('kembalikan_untuk_revisi')
                                     ->label('Kembalikan untuk Revisi')
                                     ->icon('heroicon-o-x-circle')
                                     ->color('danger')
                                     ->requiresConfirmation()
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
-                                        return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                        return $task && $task->status === TaskStatus::IN_PROGRESS;
                                     })
                                     ->form([
-                                        \Filament\Forms\Components\Textarea::make('reason')
+                                        Textarea::make('reason')
                                             ->label('Alasan Revisi')
                                             ->nullable(),
                                     ])
                                     ->action(function (array $data, $record) {
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
                                         try {
-                                            app(\App\Modules\Workflows\Services\AuditorReviewService::class)->requestRevision($task, \Illuminate\Support\Facades\Auth::user(), $data['reason'] ?? '');
-                                            \Filament\Notifications\Notification::make()->title('Dikembalikan untuk revisi')->success()->send();
+                                            app(AuditorReviewService::class)->requestRevision($task, Auth::user(), $data['reason'] ?? '');
+                                            Notification::make()->title('Dikembalikan untuk revisi')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
 
-                                \Filament\Infolists\Components\Actions\Action::make('approve_hasil_audit')
+                                Action::make('approve_hasil_audit')
                                     ->label('Approve Hasil Audit')
                                     ->icon('heroicon-o-check-circle')
                                     ->color('success')
                                     ->requiresConfirmation()
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
-                                        return $task && $task->status === \App\Modules\Workflows\Enums\TaskStatus::IN_PROGRESS;
+
+                                        return $task && $task->status === TaskStatus::IN_PROGRESS;
                                     })
                                     ->action(function ($record) {
-                                        $task = \App\Modules\Workflows\Models\Task::where('project_id', $record->project->id)
-                                            ->where('task_type', \App\Modules\Workflows\Enums\TaskType::AUDITOR_REVIEW->value)
-                                            ->where('assigned_to', \Illuminate\Support\Facades\Auth::id())
+                                        $task = Task::where('project_id', $record->project->id)
+                                            ->where('task_type', TaskType::AUDITOR_REVIEW->value)
+                                            ->where('assigned_to', Auth::id())
                                             ->first();
                                         try {
-                                            app(\App\Modules\Workflows\Services\AuditorReviewService::class)->approveExecution($task, \Illuminate\Support\Facades\Auth::user());
-                                            \Filament\Notifications\Notification::make()->title('Hasil Audit di-Approve')->success()->send();
+                                            app(AuditorReviewService::class)->approveExecution($task, Auth::user());
+                                            Notification::make()->title('Hasil Audit di-Approve')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal Approve')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal Approve')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
 
-                                \Filament\Infolists\Components\Actions\Action::make('buka_kembali_workflow')
+                                Action::make('buka_kembali_workflow')
                                     ->label('Buka Kembali Workflow')
                                     ->icon('heroicon-o-lock-open')
                                     ->color('danger')
@@ -1290,342 +1462,384 @@ class WorkspaceInfolist
                                     ->modalHeading('Buka Kembali Workflow')
                                     ->modalDescription('Apakah Anda yakin ingin membuka kembali workflow yang sudah selesai? Pastikan Invoice Negara belum diterbitkan.')
                                     ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        return \Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Manager Operasional']);
+                                        if (! $record->project) {
+                                            return false;
+                                        }
+
+                                        return Auth::user()->hasRole(['Super Admin', 'Manager Operasional']);
                                     })
                                     ->form([
-                                        \Filament\Forms\Components\Select::make('workflow_track')
+                                        Select::make('workflow_track')
                                             ->label('Workflow Track')
                                             ->options([
                                                 'ENTRY_PROGRESS' => 'Workflow A (Entry)',
                                                 'AUDITOR_PROGRESS' => 'Workflow B (Audit)',
                                             ])
                                             ->required(),
-                                        \Filament\Forms\Components\Select::make('reopened_status')
+                                        Select::make('reopened_status')
                                             ->label('Status Tujuan')
-                                            ->options(function (\Filament\Forms\Get $get) {
+                                            ->options(function (Get $get) {
                                                 if ($get('workflow_track') === 'ENTRY_PROGRESS') {
                                                     return [
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::ENTRY_NOT_STARTED->value => 'Belum Dimulai (ENTRY_NOT_STARTED)',
-                                                        \App\Modules\Workflows\Enums\WorkflowStatus::WAITING_CLIENT_DOCUMENTS->value => 'Menunggu Dokumen (WAITING_CLIENT_DOCUMENTS)',
+                                                        WorkflowStatus::ENTRY_NOT_STARTED->value => 'Belum Dimulai (ENTRY_NOT_STARTED)',
+                                                        WorkflowStatus::WAITING_CLIENT_DOCUMENTS->value => 'Menunggu Dokumen (WAITING_CLIENT_DOCUMENTS)',
                                                     ];
                                                 }
+
                                                 return [
-                                                    \App\Modules\Workflows\Enums\WorkflowStatus::AUDITOR_NOT_PROCESSED->value => 'Belum Diproses (AUDITOR_NOT_PROCESSED)',
-                                                    \App\Modules\Workflows\Enums\WorkflowStatus::DOCUMENT_REVIEW->value => 'Review Dokumen (DOCUMENT_REVIEW)',
+                                                    WorkflowStatus::AUDITOR_NOT_PROCESSED->value => 'Belum Diproses (AUDITOR_NOT_PROCESSED)',
+                                                    WorkflowStatus::DOCUMENT_REVIEW->value => 'Review Dokumen (DOCUMENT_REVIEW)',
                                                 ];
                                             })
                                             ->required(),
-                                        \Filament\Forms\Components\Textarea::make('reason')
+                                        Textarea::make('reason')
                                             ->label('Alasan')
                                             ->required(),
                                     ])
                                     ->action(function (array $data, $record) {
                                         try {
-                                            app(\App\Modules\Workflows\Services\WorkflowReopeningService::class)->reopen(
+                                            app(WorkflowReopeningService::class)->reopen(
                                                 $record->project->id,
                                                 $data['workflow_track'],
                                                 $data['reopened_status'],
-                                                \Illuminate\Support\Facades\Auth::user(),
+                                                Auth::user(),
                                                 $data['reason']
                                             );
-                                            \Filament\Notifications\Notification::make()->title('Workflow Berhasil Dibuka Kembali')->success()->send();
+                                            Notification::make()->title('Workflow Berhasil Dibuka Kembali')->success()->send();
                                         } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal Membuka Kembali')->body($e->getMessage())->danger()->send();
+                                            Notification::make()->title('Gagal Membuka Kembali')->body($e->getMessage())->danger()->send();
                                         }
                                     }),
                             ])
-                            ->columnSpan(1),
+                                ->columnSpan(1),
 
-                        \Filament\Infolists\Components\Section::make('Invoice & Pembayaran Negara')
-                            ->description('Unggah invoice dari BPJPH dan catat pembayarannya.')
-                            ->schema([
-                                TextEntry::make('gov_invoice_status')
-                                    ->label('Status Invoice Negara')
-                                    ->state(function ($record) {
-                                        if (!$record->project) return '-';
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
-                                            ->first();
-                                            
-                                        if (!$invoice) {
-                                            return $record->project->status === \App\Modules\Projects\Enums\ProjectStatus::WAITING_GOVERNMENT_INVOICE 
-                                                ? 'Menunggu Diunggah' 
-                                                : '-';
-                                        }
-                                        
-                                        return $invoice->status->getLabel();
-                                    })
-                                    ->badge(),
-                                    
-                                TextEntry::make('gov_invoice_nominal')
-                                    ->label('Tagihan')
-                                    ->state(function ($record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project?->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
-                                            ->first();
-                                        return $invoice ? 'Rp ' . number_format($invoice->total, 0, ',', '.') : '-';
-                                    }),
-                            ])
-                            ->headerActions([
-                                \Filament\Infolists\Components\Actions\Action::make('unggah_invoice_negara')
-                                    ->label('Unggah Invoice Negara')
-                                    ->icon('heroicon-o-arrow-up-tray')
-                                    ->color('primary')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        if ($record->project->status !== \App\Modules\Projects\Enums\ProjectStatus::WAITING_GOVERNMENT_INVOICE) return false;
-                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) return false;
-                                        
-                                        $hasInvoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
-                                            ->exists();
-                                            
-                                        return !$hasInvoice;
-                                    })
-                                    ->form([
-                                        \Filament\Forms\Components\TextInput::make('invoice_number')
-                                            ->label('Nomor Invoice (dari BPJPH)')
-                                            ->required(),
-                                        \Filament\Forms\Components\TextInput::make('nominal')
-                                            ->label('Nominal Tagihan')
-                                            ->numeric()
-                                            ->required(),
-                                        \Filament\Forms\Components\DatePicker::make('due_date')
-                                            ->label('Jatuh Tempo')
-                                            ->required(),
-                                        \Filament\Forms\Components\FileUpload::make('file')
-                                            ->label('File Invoice (PDF)')
-                                            ->acceptedFileTypes(['application/pdf'])
-                                            ->required()
-                                            ->preserveFilenames(),
-                                    ])
-                                    ->action(function (array $data, $record) {
-                                        try {
-                                            app(\App\Modules\Payments\Services\GovernmentInvoiceService::class)->create(
-                                                $record->project->id,
-                                                \Illuminate\Support\Facades\Auth::user(),
-                                                $data
-                                            );
-                                            \Filament\Notifications\Notification::make()->title('Invoice Negara berhasil diunggah')->success()->send();
-                                        } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
-                                        }
-                                    }),
-                                    
-                                \Filament\Infolists\Components\Actions\Action::make('catat_pembayaran_negara')
-                                    ->label('Catat Pembayaran')
-                                    ->icon('heroicon-o-currency-dollar')
-                                    ->color('success')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) return false;
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->whereIn('status', [
-                                                \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value,
-                                                \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value,
-                                            ])
-                                            ->first();
-                                            
-                                        return $invoice !== null;
-                                    })
-                                    ->form([
-                                        \Filament\Forms\Components\DatePicker::make('payment_date')
-                                            ->label('Tanggal Pembayaran')
-                                            ->default(now())
-                                            ->required(),
-                                        \Filament\Forms\Components\TextInput::make('amount')
-                                            ->label('Nominal Pembayaran')
-                                            ->numeric()
-                                            ->required(),
-                                        \Filament\Forms\Components\TextInput::make('payment_method')
-                                            ->label('Metode Pembayaran (Contoh: Transfer Bank)')
-                                            ->required(),
-                                        \Filament\Forms\Components\TextInput::make('reference_number')
-                                            ->label('No. Referensi')
-                                            ->nullable(),
-                                        \Filament\Forms\Components\Textarea::make('notes')
-                                            ->label('Catatan')
-                                            ->nullable(),
-                                        \Filament\Forms\Components\FileUpload::make('proof_file')
-                                            ->label('Bukti Pembayaran')
-                                            ->required()
-                                            ->preserveFilenames(),
-                                    ])
-                                    ->action(function (array $data, $record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->whereIn('status', [
-                                                \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value,
-                                                \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value,
-                                            ])
-                                            ->first();
-                                            
-                                        if (!$invoice) return;
-                                        
-                                        try {
-                                            app(\App\Modules\Payments\Services\PaymentService::class)->createPayment($invoice, $data, $data['proof_file'] ?? null);
-                                            \Filament\Notifications\Notification::make()->title('Pembayaran berhasil dicatat dan menunggu verifikasi')->success()->send();
-                                        } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
-                                        }
-                                    }),
-                                    
-                                \Filament\Infolists\Components\Actions\Action::make('verifikasi_pembayaran_negara')
-                                    ->label('Verifikasi Pembayaran')
-                                    ->icon('heroicon-o-check-circle')
-                                    ->color('success')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Finance'])) return false;
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        if (!$invoice) return false;
-                                        
-                                        return $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->exists();
-                                    })
-                                    ->form(function ($record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        $pendingPayments = $invoice ? $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->get() : collect();
-                                        
-                                        $options = $pendingPayments->mapWithKeys(function ($payment) {
-                                            return [$payment->id => "Rp " . number_format($payment->amount, 0, ',', '.') . " (" . $payment->payment_date->format('d M Y') . ")"];
-                                        });
-                                        
-                                        return [
-                                            \Filament\Forms\Components\Select::make('payment_id')
-                                                ->label('Pilih Pembayaran Pending')
-                                                ->options($options)
+                            Section::make('Invoice & Pembayaran Negara')
+                                ->description('Unggah invoice dari BPJPH dan catat pembayarannya.')
+                                ->schema([
+                                    TextEntry::make('gov_invoice_status')
+                                        ->label('Status Invoice Negara')
+                                        ->state(function ($record) {
+                                            if (! $record->project) {
+                                                return '-';
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->where('status', '!=', InvoiceStatus::CANCELLED->value)
+                                                ->first();
+
+                                            if (! $invoice) {
+                                                return $record->project->status === ProjectStatus::WAITING_GOVERNMENT_INVOICE
+                                                    ? 'Menunggu Diunggah'
+                                                    : '-';
+                                            }
+
+                                            return $invoice->status->getLabel();
+                                        })
+                                        ->badge(),
+
+                                    TextEntry::make('gov_invoice_nominal')
+                                        ->label('Tagihan')
+                                        ->state(function ($record) {
+                                            $invoice = Invoice::where('project_id', $record->project?->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->where('status', '!=', InvoiceStatus::CANCELLED->value)
+                                                ->first();
+
+                                            return $invoice ? 'Rp '.number_format($invoice->total, 0, ',', '.') : '-';
+                                        }),
+                                ])
+                                ->headerActions([
+                                    Action::make('unggah_invoice_negara')
+                                        ->label('Unggah Invoice Negara')
+                                        ->icon('heroicon-o-arrow-up-tray')
+                                        ->color('primary')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if ($record->project->status !== ProjectStatus::WAITING_GOVERNMENT_INVOICE) {
+                                                return false;
+                                            }
+                                            if (! Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) {
+                                                return false;
+                                            }
+
+                                            $hasInvoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->where('status', '!=', InvoiceStatus::CANCELLED->value)
+                                                ->exists();
+
+                                            return ! $hasInvoice;
+                                        })
+                                        ->form([
+                                            TextInput::make('invoice_number')
+                                                ->label('Nomor Invoice (dari BPJPH)')
                                                 ->required(),
-                                            \Filament\Forms\Components\Textarea::make('verification_notes')
-                                                ->label('Catatan Verifikasi')
+                                            TextInput::make('nominal')
+                                                ->label('Nominal Tagihan')
+                                                ->numeric()
+                                                ->required(),
+                                            DatePicker::make('due_date')
+                                                ->label('Jatuh Tempo')
+                                                ->required(),
+                                            FileUpload::make('file')
+                                                ->label('File Invoice (PDF)')
+                                                ->acceptedFileTypes(['application/pdf'])
+                                                ->required()
+                                                ->preserveFilenames(),
+                                        ])
+                                        ->action(function (array $data, $record) {
+                                            try {
+                                                app(GovernmentInvoiceService::class)->create(
+                                                    $record->project->id,
+                                                    Auth::user(),
+                                                    $data
+                                                );
+                                                Notification::make()->title('Invoice Negara berhasil diunggah')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+
+                                    Action::make('catat_pembayaran_negara')
+                                        ->label('Catat Pembayaran')
+                                        ->icon('heroicon-o-currency-dollar')
+                                        ->color('success')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if (! Auth::user()->hasRole(['Super Admin', 'Admin Perusahaan'])) {
+                                                return false;
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->whereIn('status', [
+                                                    InvoiceStatus::PUBLISHED->value,
+                                                    InvoiceStatus::PARTIAL->value,
+                                                ])
+                                                ->first();
+
+                                            return $invoice !== null;
+                                        })
+                                        ->form([
+                                            DatePicker::make('payment_date')
+                                                ->label('Tanggal Pembayaran')
+                                                ->default(now())
+                                                ->required(),
+                                            TextInput::make('amount')
+                                                ->label('Nominal Pembayaran')
+                                                ->numeric()
+                                                ->required(),
+                                            TextInput::make('payment_method')
+                                                ->label('Metode Pembayaran (Contoh: Transfer Bank)')
+                                                ->required(),
+                                            TextInput::make('reference_number')
+                                                ->label('No. Referensi')
                                                 ->nullable(),
-                                        ];
-                                    })
-                                    ->action(function (array $data) {
-                                        $payment = \App\Modules\Payments\Models\Payment::find($data['payment_id']);
-                                        if (!$payment) return;
-                                        
-                                        try {
-                                            app(\App\Modules\Payments\Services\PaymentService::class)->verifyPayment($payment, $data);
-                                            \Filament\Notifications\Notification::make()->title('Pembayaran diverifikasi')->success()->send();
-                                        } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
-                                        }
-                                    }),
-                                    
-                                \Filament\Infolists\Components\Actions\Action::make('tolak_pembayaran_negara')
-                                    ->label('Tolak Pembayaran')
-                                    ->icon('heroicon-o-x-circle')
-                                    ->color('danger')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        if (!\Illuminate\Support\Facades\Auth::user()->hasRole(['Super Admin', 'Finance'])) return false;
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        if (!$invoice) return false;
-                                        
-                                        return $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->exists();
-                                    })
-                                    ->form(function ($record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        $pendingPayments = $invoice ? $invoice->payments()->where('status', \App\Modules\Payments\Enums\PaymentStatus::PENDING->value)->get() : collect();
-                                        
-                                        $options = $pendingPayments->mapWithKeys(function ($payment) {
-                                            return [$payment->id => "Rp " . number_format($payment->amount, 0, ',', '.') . " (" . $payment->payment_date->format('d M Y') . ")"];
-                                        });
-                                        
-                                        return [
-                                            \Filament\Forms\Components\Select::make('payment_id')
-                                                ->label('Pilih Pembayaran Pending')
-                                                ->options($options)
-                                                ->required(),
-                                            \Filament\Forms\Components\Textarea::make('rejection_reason')
-                                                ->label('Alasan Penolakan')
-                                                ->required(),
-                                        ];
-                                    })
-                                    ->action(function (array $data) {
-                                        $payment = \App\Modules\Payments\Models\Payment::find($data['payment_id']);
-                                        if (!$payment) return;
-                                        
-                                        try {
-                                            app(\App\Modules\Payments\Services\PaymentService::class)->rejectPayment($payment, $data);
-                                            \Filament\Notifications\Notification::make()->title('Pembayaran ditolak')->success()->send();
-                                        } catch (\Exception $e) {
-                                            \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
-                                        }
-                                    }),
-                                    
-                                \Filament\Infolists\Components\Actions\Action::make('lihat_invoice_negara')
-                                    ->label('Lihat Invoice')
-                                    ->icon('heroicon-o-document-text')
-                                    ->color('gray')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        return $invoice && $invoice->getFirstMedia('government-invoice-document');
-                                    })
-                                    ->url(function ($record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                        
-                                        return $invoice ? $invoice->getFirstMediaUrl('government-invoice-document') : '#';
-                                    })
-                                    ->openUrlInNewTab(),
-                                    
-                                \Filament\Infolists\Components\Actions\Action::make('lihat_bukti_pembayaran_negara')
-                                    ->label('Lihat Bukti Bayar Terakhir')
-                                    ->icon('heroicon-o-photo')
-                                    ->color('gray')
-                                    ->visible(function ($record) {
-                                        if (!$record->project) return false;
-                                        
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        if (!$invoice) return false;
-                                        
-                                        $latestPayment = $invoice->payments()->latest()->first();
-                                        return $latestPayment && $latestPayment->getFirstMedia('payment-proofs');
-                                    })
-                                    ->url(function ($record) {
-                                        $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                            ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
-                                            ->first();
-                                            
-                                        $latestPayment = $invoice->payments()->latest()->first();
-                                        return $latestPayment ? $latestPayment->getFirstMediaUrl('payment-proofs') : '#';
-                                    })
-                                    ->openUrlInNewTab(),
-                            ])
-                            ->columnSpanFull(),
-                        ]),
+                                            Textarea::make('notes')
+                                                ->label('Catatan')
+                                                ->nullable(),
+                                            FileUpload::make('proof_file')
+                                                ->label('Bukti Pembayaran')
+                                                ->required()
+                                                ->preserveFilenames(),
+                                        ])
+                                        ->action(function (array $data, $record) {
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->whereIn('status', [
+                                                    InvoiceStatus::PUBLISHED->value,
+                                                    InvoiceStatus::PARTIAL->value,
+                                                ])
+                                                ->first();
 
+                                            if (! $invoice) {
+                                                return;
+                                            }
+
+                                            try {
+                                                app(PaymentService::class)->createPayment($invoice, $data, $data['proof_file'] ?? null);
+                                                Notification::make()->title('Pembayaran berhasil dicatat dan menunggu verifikasi')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+
+                                    Action::make('verifikasi_pembayaran_negara')
+                                        ->label('Verifikasi Pembayaran')
+                                        ->icon('heroicon-o-check-circle')
+                                        ->color('success')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if (! Auth::user()->hasRole(['Super Admin', 'Finance'])) {
+                                                return false;
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            if (! $invoice) {
+                                                return false;
+                                            }
+
+                                            return $invoice->payments()->where('status', PaymentStatus::PENDING->value)->exists();
+                                        })
+                                        ->form(function ($record) {
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            $pendingPayments = $invoice ? $invoice->payments()->where('status', PaymentStatus::PENDING->value)->get() : collect();
+
+                                            $options = $pendingPayments->mapWithKeys(function ($payment) {
+                                                return [$payment->id => 'Rp '.number_format($payment->amount, 0, ',', '.').' ('.$payment->payment_date->format('d M Y').')'];
+                                            });
+
+                                            return [
+                                                Select::make('payment_id')
+                                                    ->label('Pilih Pembayaran Pending')
+                                                    ->options($options)
+                                                    ->required(),
+                                                Textarea::make('verification_notes')
+                                                    ->label('Catatan Verifikasi')
+                                                    ->nullable(),
+                                            ];
+                                        })
+                                        ->action(function (array $data) {
+                                            $payment = Payment::find($data['payment_id']);
+                                            if (! $payment) {
+                                                return;
+                                            }
+
+                                            try {
+                                                app(PaymentService::class)->verifyPayment($payment, $data);
+                                                Notification::make()->title('Pembayaran diverifikasi')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+
+                                    Action::make('tolak_pembayaran_negara')
+                                        ->label('Tolak Pembayaran')
+                                        ->icon('heroicon-o-x-circle')
+                                        ->color('danger')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if (! Auth::user()->hasRole(['Super Admin', 'Finance'])) {
+                                                return false;
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            if (! $invoice) {
+                                                return false;
+                                            }
+
+                                            return $invoice->payments()->where('status', PaymentStatus::PENDING->value)->exists();
+                                        })
+                                        ->form(function ($record) {
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            $pendingPayments = $invoice ? $invoice->payments()->where('status', PaymentStatus::PENDING->value)->get() : collect();
+
+                                            $options = $pendingPayments->mapWithKeys(function ($payment) {
+                                                return [$payment->id => 'Rp '.number_format($payment->amount, 0, ',', '.').' ('.$payment->payment_date->format('d M Y').')'];
+                                            });
+
+                                            return [
+                                                Select::make('payment_id')
+                                                    ->label('Pilih Pembayaran Pending')
+                                                    ->options($options)
+                                                    ->required(),
+                                                Textarea::make('rejection_reason')
+                                                    ->label('Alasan Penolakan')
+                                                    ->required(),
+                                            ];
+                                        })
+                                        ->action(function (array $data) {
+                                            $payment = Payment::find($data['payment_id']);
+                                            if (! $payment) {
+                                                return;
+                                            }
+
+                                            try {
+                                                app(PaymentService::class)->rejectPayment($payment, $data);
+                                                Notification::make()->title('Pembayaran ditolak')->success()->send();
+                                            } catch (\Exception $e) {
+                                                Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                            }
+                                        }),
+
+                                    Action::make('lihat_invoice_negara')
+                                        ->label('Lihat Invoice')
+                                        ->icon('heroicon-o-document-text')
+                                        ->color('gray')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            return $invoice && $invoice->getFirstMedia('government-invoice-document');
+                                        })
+                                        ->url(function ($record) {
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            return $invoice ? $invoice->getFirstMediaUrl('government-invoice-document') : '#';
+                                        })
+                                        ->openUrlInNewTab(),
+
+                                    Action::make('lihat_bukti_pembayaran_negara')
+                                        ->label('Lihat Bukti Bayar Terakhir')
+                                        ->icon('heroicon-o-photo')
+                                        ->color('gray')
+                                        ->visible(function ($record) {
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            if (! $invoice) {
+                                                return false;
+                                            }
+
+                                            $latestPayment = $invoice->payments()->latest()->first();
+
+                                            return $latestPayment && $latestPayment->getFirstMedia('payment-proofs');
+                                        })
+                                        ->url(function ($record) {
+                                            $invoice = Invoice::where('project_id', $record->project->id)
+                                                ->where('invoice_type', InvoiceType::GOVERNMENT->value)
+                                                ->first();
+
+                                            $latestPayment = $invoice->payments()->latest()->first();
+
+                                            return $latestPayment ? $latestPayment->getFirstMediaUrl('payment-proofs') : '#';
+                                        })
+                                        ->openUrlInNewTab(),
+                                ])
+                                ->columnSpanFull(),
+                        ]),
 
                     Tabs\Tab::make('Workflow')
                         ->icon('heroicon-o-arrow-path')
@@ -1646,160 +1860,160 @@ class WorkspaceInfolist
                     Tabs\Tab::make('Pembayaran')
                         ->icon('heroicon-o-currency-dollar')
                         ->schema(function ($record) {
-                            if (!$record->project) {
+                            if (! $record->project) {
                                 return [
                                     TextEntry::make('pembayaran_placeholder')
                                         ->hiddenLabel()
                                         ->default('Belum ada project yang dikerjakan.'),
                                 ];
                             }
-                            
-                            $summary = \App\Modules\Projects\Services\ProjectFinancialSummaryService::calculate($record->project);
-                            $isPartner = $record->project->client->type === \App\Modules\Clients\Enums\ClientType::PARTNER->value;
-                            
+
+                            $summary = ProjectFinancialSummaryService::calculate($record->project);
+                            $isPartner = $record->project->client->type === ClientType::PARTNER->value;
+
                             // Cek jika butuh Termin
                             $canIssueTermin = $record->project->paymentSchedules()
                                 ->where('status', 'PENDING')
-                                ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::INSTALLMENT->value)
+                                ->where('invoice_type', InvoiceType::INSTALLMENT->value)
                                 ->exists();
-                                
+
                             // Cek jika butuh Pelunasan
                             $canIssueSettlement = false;
-                            if (!$canIssueTermin) {
-                                $clientRem = \Brick\Math\BigDecimal::of($summary['client_remaining_uninvoiced']);
-                                $partnerRem = \Brick\Math\BigDecimal::of($summary['partner_remaining_uninvoiced']);
-                                
+                            if (! $canIssueTermin) {
+                                $clientRem = BigDecimal::of($summary['client_remaining_uninvoiced']);
+                                $partnerRem = BigDecimal::of($summary['partner_remaining_uninvoiced']);
+
                                 $hasUnpaid = $record->project->invoices()
                                     ->whereIn('status', [
-                                        \App\Modules\Payments\Enums\InvoiceStatus::DRAFT->value, 
-                                        \App\Modules\Payments\Enums\InvoiceStatus::PUBLISHED->value, 
-                                        \App\Modules\Payments\Enums\InvoiceStatus::PARTIAL->value
+                                        InvoiceStatus::DRAFT->value,
+                                        InvoiceStatus::PUBLISHED->value,
+                                        InvoiceStatus::PARTIAL->value,
                                     ])
-                                    ->where('invoice_type', '!=', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                    ->where('invoice_type', '!=', InvoiceType::GOVERNMENT->value)
                                     ->exists();
-                                    
+
                                 $hasSettlement = $record->project->invoices()
-                                    ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::SETTLEMENT->value)
-                                    ->where('status', '!=', \App\Modules\Payments\Enums\InvoiceStatus::CANCELLED->value)
+                                    ->where('invoice_type', InvoiceType::SETTLEMENT->value)
+                                    ->where('status', '!=', InvoiceStatus::CANCELLED->value)
                                     ->exists();
-                                
-                                if (!$hasUnpaid && !$hasSettlement && ($clientRem->isGreaterThan(0) || $partnerRem->isGreaterThan(0))) {
+
+                                if (! $hasUnpaid && ! $hasSettlement && ($clientRem->isGreaterThan(0) || $partnerRem->isGreaterThan(0))) {
                                     $canIssueSettlement = true;
                                 }
                             }
-                            
-                            $user = \Illuminate\Support\Facades\Auth::user();
+
+                            $user = Auth::user();
                             $canManage = $user->hasRole(['Super Admin', 'Finance']);
 
                             return [
-                                \Filament\Infolists\Components\Section::make('Ringkasan Finansial Komersial')
+                                Section::make('Ringkasan Finansial Komersial')
                                     ->schema([
                                         TextEntry::make('financial.client_contract')
                                             ->label('Nilai Kontrak Klien')
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_contract'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['client_total_contract'], 0, ',', '.')),
                                         TextEntry::make('financial.client_invoiced')
                                             ->label('Total Ditagih (Klien)')
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_invoiced'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['client_total_invoiced'], 0, ',', '.')),
                                         TextEntry::make('financial.client_paid')
                                             ->label('Total Terbayar (Klien)')
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_total_paid'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['client_total_paid'], 0, ',', '.')),
                                         TextEntry::make('financial.client_rem_uninvoiced')
                                             ->label('Sisa Belum Ditagih (Klien)')
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_remaining_uninvoiced'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['client_remaining_uninvoiced'], 0, ',', '.')),
                                         TextEntry::make('financial.client_rem_unpaid')
                                             ->label('Sisa Belum Dibayar (Klien)')
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['client_remaining_unpaid'], 0, ',', '.')),
-                                            
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['client_remaining_unpaid'], 0, ',', '.')),
+
                                         // Partner info
                                         TextEntry::make('financial.partner_contract')
                                             ->label('Nilai Kontrak Mitra')
                                             ->visible($isPartner)
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_contract'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['partner_total_contract'], 0, ',', '.')),
                                         TextEntry::make('financial.partner_invoiced')
                                             ->label('Total Ditagih (Mitra)')
                                             ->visible($isPartner)
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_invoiced'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['partner_total_invoiced'], 0, ',', '.')),
                                         TextEntry::make('financial.partner_paid')
                                             ->label('Total Terbayar (Mitra)')
                                             ->visible($isPartner)
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_total_paid'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['partner_total_paid'], 0, ',', '.')),
                                         TextEntry::make('financial.partner_rem_uninvoiced')
                                             ->label('Sisa Belum Ditagih (Mitra)')
                                             ->visible($isPartner)
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_remaining_uninvoiced'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['partner_remaining_uninvoiced'], 0, ',', '.')),
                                         TextEntry::make('financial.partner_rem_unpaid')
                                             ->label('Sisa Belum Dibayar (Mitra)')
                                             ->visible($isPartner)
-                                            ->default(fn () => 'Rp ' . number_format((float) $summary['partner_remaining_unpaid'], 0, ',', '.')),
+                                            ->default(fn () => 'Rp '.number_format((float) $summary['partner_remaining_unpaid'], 0, ',', '.')),
                                     ])
                                     ->columns(5)
                                     ->headerActions([
-                                        \Filament\Infolists\Components\Actions\Action::make('issue_termin')
+                                        Action::make('issue_termin')
                                             ->label('Terbitkan Termin Berikutnya')
                                             ->color('primary')
                                             ->visible($canIssueTermin && $canManage)
                                             ->form([
-                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                DatePicker::make('issued_at')
                                                     ->label('Tanggal Terbit')
                                                     ->default(now())
                                                     ->required(),
-                                                \Filament\Forms\Components\DatePicker::make('due_date')
+                                                DatePicker::make('due_date')
                                                     ->label('Jatuh Tempo')
                                                     ->default(now()->addDays(7))
                                                     ->required(),
-                                                \Filament\Forms\Components\Textarea::make('notes')
+                                                Textarea::make('notes')
                                                     ->label('Catatan Tambahan')
                                                     ->nullable(),
                                             ])
                                             ->action(function (array $data, $record) {
                                                 try {
-                                                    app(\App\Modules\Payments\Services\TerminService::class)->issueNextTermin(
-                                                        $record->project, 
-                                                        $data['issued_at'], 
-                                                        $data['due_date'], 
-                                                        $data['notes'], 
-                                                        \Illuminate\Support\Facades\Auth::user()
+                                                    app(TerminService::class)->issueNextTermin(
+                                                        $record->project,
+                                                        $data['issued_at'],
+                                                        $data['due_date'],
+                                                        $data['notes'],
+                                                        Auth::user()
                                                     );
-                                                    \Filament\Notifications\Notification::make()->title('Termin diterbitkan')->success()->send();
+                                                    Notification::make()->title('Termin diterbitkan')->success()->send();
                                                 } catch (\Exception $e) {
-                                                    \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                                    Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                                 }
                                             }),
-                                            
-                                        \Filament\Infolists\Components\Actions\Action::make('issue_settlement')
+
+                                        Action::make('issue_settlement')
                                             ->label('Terbitkan Invoice Pelunasan')
                                             ->color('success')
                                             ->visible($canIssueSettlement && $canManage)
                                             ->form([
-                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                DatePicker::make('issued_at')
                                                     ->label('Tanggal Terbit')
                                                     ->default(now())
                                                     ->required(),
-                                                \Filament\Forms\Components\DatePicker::make('due_date')
+                                                DatePicker::make('due_date')
                                                     ->label('Jatuh Tempo')
                                                     ->default(now()->addDays(7))
                                                     ->required(),
-                                                \Filament\Forms\Components\Textarea::make('notes')
+                                                Textarea::make('notes')
                                                     ->label('Catatan Tambahan')
                                                     ->nullable(),
                                             ])
                                             ->action(function (array $data, $record) {
                                                 try {
-                                                    app(\App\Modules\Payments\Services\TerminService::class)->issueSettlement(
-                                                        $record->project, 
-                                                        $data['issued_at'], 
-                                                        $data['due_date'], 
-                                                        $data['notes'], 
-                                                        \Illuminate\Support\Facades\Auth::user()
+                                                    app(TerminService::class)->issueSettlement(
+                                                        $record->project,
+                                                        $data['issued_at'],
+                                                        $data['due_date'],
+                                                        $data['notes'],
+                                                        Auth::user()
                                                     );
-                                                    \Filament\Notifications\Notification::make()->title('Pelunasan diterbitkan')->success()->send();
+                                                    Notification::make()->title('Pelunasan diterbitkan')->success()->send();
                                                 } catch (\Exception $e) {
-                                                    \Filament\Notifications\Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
+                                                    Notification::make()->title('Gagal')->body($e->getMessage())->danger()->send();
                                                 }
                                             }),
                                     ]),
-                                    
-                                \Filament\Infolists\Components\RepeatableEntry::make('project.invoices')
+
+                                RepeatableEntry::make('project.invoices')
                                     ->label('Daftar Invoice')
                                     ->schema([
                                         TextEntry::make('invoice_number')->label('No. Invoice'),
@@ -1807,7 +2021,7 @@ class WorkspaceInfolist
                                         TextEntry::make('audience')->label('Audience'),
                                         TextEntry::make('subtotal')
                                             ->label('Nominal')
-                                            ->formatStateUsing(fn ($state) => 'Rp ' . number_format((float) $state, 0, ',', '.')),
+                                            ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.')),
                                         TextEntry::make('status')->label('Status')->badge(),
                                         TextEntry::make('due_date')->label('Jatuh Tempo')->date('d M Y'),
                                     ])
@@ -1842,107 +2056,111 @@ class WorkspaceInfolist
                     Tabs\Tab::make('Sertifikat')
                         ->icon('heroicon-o-academic-cap')
                         ->schema(function ($record) {
-                            if (!$record->project) {
+                            if (! $record->project) {
                                 return [
                                     TextEntry::make('sertifikat_placeholder')
                                         ->hiddenLabel()
                                         ->default('Belum ada project yang dikerjakan.'),
                                 ];
                             }
-                            
+
                             $certificate = $record->project->certificate;
-                            
-                            if (!$certificate) {
+
+                            if (! $certificate) {
                                 return [
                                     TextEntry::make('sertifikat_placeholder')
                                         ->hiddenLabel()
                                         ->default('Sertifikat belum diterbitkan.'),
-                                        
-                                    \Filament\Infolists\Components\Actions::make([
-                                        \Filament\Infolists\Components\Actions\Action::make('unggah_sertifikat')
+
+                                    Actions::make([
+                                        Action::make('unggah_sertifikat')
                                             ->label('Unggah Sertifikat')
                                             ->icon('heroicon-o-arrow-up-tray')
                                             ->color('primary')
                                             ->visible(function ($record) {
-                                                if (!$record->project) return false;
-                                                
+                                                if (! $record->project) {
+                                                    return false;
+                                                }
+
                                                 // Hanya jika project WAITING_CERTIFICATE
-                                                if ($record->project->status !== \App\Modules\Projects\Enums\ProjectStatus::WAITING_CERTIFICATE) {
+                                                if ($record->project->status !== ProjectStatus::WAITING_CERTIFICATE) {
                                                     return false;
                                                 }
-                                                
+
                                                 // Hanya jika invoice PAID
-                                                $invoice = \App\Modules\Payments\Models\Invoice::where('project_id', $record->project->id)
-                                                    ->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT->value)
+                                                $invoice = Invoice::where('project_id', $record->project->id)
+                                                    ->where('invoice_type', InvoiceType::GOVERNMENT->value)
                                                     ->first();
-                                                    
-                                                if (!$invoice || $invoice->status !== \App\Modules\Payments\Enums\InvoiceStatus::PAID) {
+
+                                                if (! $invoice || $invoice->status !== InvoiceStatus::PAID) {
                                                     return false;
                                                 }
-                                                
+
                                                 // Authorization
-                                                $user = \Illuminate\Support\Facades\Auth::user();
-                                                if ($user->hasRole('Super Admin')) return true;
-                                                
+                                                $user = Auth::user();
+                                                if ($user->hasRole('Super Admin')) {
+                                                    return true;
+                                                }
+
                                                 if ($user->hasRole('Admin Perusahaan')) {
-                                                    $assignment = \App\Modules\Projects\Models\ProjectAssignment::where('project_id', $record->project->id)
+                                                    $assignment = ProjectAssignment::where('project_id', $record->project->id)
                                                         ->where('user_id', $user->id)
                                                         ->where('role', 'PIC')
                                                         ->first();
-                                                        
+
                                                     return $assignment !== null;
                                                 }
-                                                
+
                                                 return false;
                                             })
                                             ->form([
-                                                \Filament\Forms\Components\TextInput::make('certificate_number')
+                                                TextInput::make('certificate_number')
                                                     ->label('Nomor Sertifikat')
                                                     ->required()
                                                     ->unique('certificates', 'certificate_number'),
-                                                \Filament\Forms\Components\DatePicker::make('issued_at')
+                                                DatePicker::make('issued_at')
                                                     ->label('Tanggal Terbit')
                                                     ->required(),
-                                                \Filament\Forms\Components\DatePicker::make('valid_until')
+                                                DatePicker::make('valid_until')
                                                     ->label('Masa Berlaku (Opsional)')
                                                     ->after('issued_at')
                                                     ->nullable(),
-                                                \Filament\Forms\Components\FileUpload::make('file')
+                                                FileUpload::make('file')
                                                     ->label('Dokumen Sertifikat (PDF)')
                                                     ->acceptedFileTypes(['application/pdf'])
                                                     ->maxSize(5120) // Maksimal 5MB
                                                     ->required()
                                                     ->storeFiles(false),
                                             ])
-                                            ->action(function (array $data, $record, \Filament\Forms\Components\FileUpload $component) {
+                                            ->action(function (array $data, $record, FileUpload $component) {
                                                 try {
                                                     $file = collect($component->getState())->first();
-                                                    
-                                                    app(\App\Modules\Projects\Services\CertificateService::class)->issueCertificate(
-                                                        $record->project, 
-                                                        $data, 
-                                                        $file, 
-                                                        \Illuminate\Support\Facades\Auth::user()
+
+                                                    app(CertificateService::class)->issueCertificate(
+                                                        $record->project,
+                                                        $data,
+                                                        $file,
+                                                        Auth::user()
                                                     );
-                                                    
-                                                    \Filament\Notifications\Notification::make()
+
+                                                    Notification::make()
                                                         ->title('Sertifikat Berhasil Diunggah')
                                                         ->success()
                                                         ->send();
                                                 } catch (\Exception $e) {
-                                                    \Filament\Notifications\Notification::make()
+                                                    Notification::make()
                                                         ->title('Gagal Mengunggah Sertifikat')
                                                         ->body($e->getMessage())
                                                         ->danger()
                                                         ->send();
                                                 }
-                                            })
+                                            }),
                                     ])->columnSpanFull(),
                                 ];
                             }
-                            
+
                             return [
-                                \Filament\Infolists\Components\Section::make('Informasi Sertifikat')
+                                Section::make('Informasi Sertifikat')
                                     ->schema([
                                         TextEntry::make('project.certificate.certificate_number')
                                             ->label('Nomor Sertifikat'),
@@ -1958,9 +2176,9 @@ class WorkspaceInfolist
                                         TextEntry::make('project.certificate.created_at')
                                             ->label('Waktu Penerbitan')
                                             ->dateTime('d M Y H:i'),
-                                            
-                                        \Filament\Infolists\Components\Actions::make([
-                                            \Filament\Infolists\Components\Actions\Action::make('lihat_sertifikat')
+
+                                        Actions::make([
+                                            Action::make('lihat_sertifikat')
                                                 ->label('Lihat Sertifikat')
                                                 ->icon('heroicon-o-eye')
                                                 ->color('gray')
@@ -1971,8 +2189,8 @@ class WorkspaceInfolist
                                                     return $record->project->certificate->getFirstMediaUrl('certificate');
                                                 })
                                                 ->openUrlInNewTab(),
-                                                
-                                            \Filament\Infolists\Components\Actions\Action::make('unduh_sertifikat')
+
+                                            Action::make('unduh_sertifikat')
                                                 ->label('Unduh Sertifikat')
                                                 ->icon('heroicon-o-arrow-down-tray')
                                                 ->color('primary')
@@ -1981,6 +2199,7 @@ class WorkspaceInfolist
                                                 })
                                                 ->action(function ($record) {
                                                     $media = $record->project->certificate->getFirstMedia('certificate');
+
                                                     return response()->download($media->getPath(), $media->file_name);
                                                 }),
                                         ])->columnSpanFull(),
@@ -1994,10 +2213,12 @@ class WorkspaceInfolist
                         ->schema([
                             Section::make('Checklist Penyelesaian Project')
                                 ->schema(function ($record) {
-                                    if (!$record->project) return [];
+                                    if (! $record->project) {
+                                        return [];
+                                    }
 
-                                    $readiness = \App\Modules\Projects\Services\ProjectClosureReadinessService::evaluate($record->project);
-                                    
+                                    $readiness = app(ProjectClosureReadinessService::class)->evaluate($record->project);
+
                                     $checklist = [
                                         'certificate_issued' => 'Sertifikat telah diterbitkan',
                                         'government_invoice_paid' => 'Invoice Negara telah dibayar',
@@ -2011,7 +2232,7 @@ class WorkspaceInfolist
                                         'client_obligations_paid' => 'Seluruh kewajiban CLIENT telah lunas',
                                     ];
 
-                                    if ($record->client_type === \App\Modules\Clients\Enums\ClientType::PARTNER) {
+                                    if ($record->client_type === ClientType::PARTNER) {
                                         $checklist['partner_obligations_paid'] = 'Seluruh kewajiban PARTNER telah lunas';
                                     }
                                     $checklist['no_open_tasks'] = 'Tidak ada Task wajib yang masih terbuka';
@@ -2021,8 +2242,8 @@ class WorkspaceInfolist
                                         $isReady = $readiness[$key] ?? false;
                                         $icon = $isReady ? 'heroicon-o-check-circle' : 'heroicon-o-x-circle';
                                         $color = $isReady ? 'success' : 'danger';
-                                        
-                                        $schema[] = \Filament\Infolists\Components\TextEntry::make('chk_' . $key)
+
+                                        $schema[] = TextEntry::make('chk_'.$key)
                                             ->label($label)
                                             ->default($isReady ? 'Terpenuhi' : 'Belum')
                                             ->badge()
@@ -2040,20 +2261,24 @@ class WorkspaceInfolist
                                         ->icon('heroicon-o-archive-box-x-mark')
                                         ->requiresConfirmation()
                                         ->visible(function ($record) {
-                                            if (!$record->project) return false;
-                                            if ($record->project->isLocked()) return false;
-                                            
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if ($record->project->isLocked()) {
+                                                return false;
+                                            }
+
                                             // Action only for Super Admin or specific roles
                                             return Auth::user()->hasAnyRole(['Super Admin', 'Admin Perusahaan']);
                                         })
                                         ->form([
-                                            \Filament\Forms\Components\Textarea::make('reason')
+                                            Textarea::make('reason')
                                                 ->label('Alasan Pembatalan')
-                                                ->required()
+                                                ->required(),
                                         ])
                                         ->action(function (array $data, $record) {
                                             try {
-                                                app(\App\Modules\Projects\Services\ProjectCancellationService::class)
+                                                app(ProjectCancellationService::class)
                                                     ->cancel($record->project, $data['reason'], Auth::user());
                                                 Notification::make()->title('Project Dibatalkan')->success()->send();
                                             } catch (\Exception $e) {
@@ -2067,20 +2292,24 @@ class WorkspaceInfolist
                                         ->icon('heroicon-o-arrow-path')
                                         ->requiresConfirmation()
                                         ->visible(function ($record) {
-                                            if (!$record->project) return false;
-                                            if (!$record->project->isLocked()) return false;
-                                            
+                                            if (! $record->project) {
+                                                return false;
+                                            }
+                                            if (! $record->project->isLocked()) {
+                                                return false;
+                                            }
+
                                             // Khusus Super Admin
                                             return Auth::user()->hasRole('Super Admin');
                                         })
                                         ->form([
-                                            \Filament\Forms\Components\Textarea::make('reason')
+                                            Textarea::make('reason')
                                                 ->label('Alasan Membuka Kembali')
-                                                ->required()
+                                                ->required(),
                                         ])
                                         ->action(function (array $data, $record) {
                                             try {
-                                                app(\App\Modules\Projects\Services\ProjectReopeningService::class)
+                                                app(ProjectReopeningService::class)
                                                     ->reopen($record->project, $data['reason'], Auth::user());
                                                 Notification::make()->title('Project Dibuka Kembali')->success()->send();
                                             } catch (\Exception $e) {

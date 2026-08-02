@@ -3,14 +3,13 @@
 namespace App\Modules\Dashboards\Services;
 
 use App\Modules\Dashboards\DataTransferObjects\FinanceDashboardFilterData;
-use App\Modules\Projects\Models\Project;
+use App\Modules\Payments\Enums\InvoiceAudience;
+use App\Modules\Payments\Enums\InvoiceStatus;
+use App\Modules\Payments\Enums\InvoiceType;
+use App\Modules\Payments\Enums\PaymentStatus;
 use App\Modules\Payments\Models\Invoice;
 use App\Modules\Payments\Models\Payment;
-use App\Modules\Payments\Enums\InvoiceType;
-use App\Modules\Payments\Enums\InvoiceStatus;
-use App\Modules\Payments\Enums\PaymentStatus;
-use App\Modules\Payments\Enums\InvoiceAudience;
-use App\Modules\Projects\Enums\ProjectStatus;
+use App\Modules\Projects\Models\Project;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -19,14 +18,13 @@ class FinanceDashboardService
 {
     private const CACHE_TTL = 60; // 60 seconds
 
-    public function __construct(private readonly FinanceDashboardFilterData $filter)
-    {
-    }
+    public function __construct(private readonly FinanceDashboardFilterData $filter) {}
 
     private function getCacheKey(string $type): string
     {
         $hash = md5(json_encode((array) $this->filter));
         $scope = auth()->id();
+
         return "finance-dashboard:{$type}:{$hash}:{$scope}";
     }
 
@@ -53,24 +51,45 @@ class FinanceDashboardService
         if ($this->filter->pic_id) {
             $query->whereHas('project.assignments', function ($q) {
                 $q->where('user_id', $this->filter->pic_id)
-                  ->whereNull('ended_at');
+                    ->whereNull('ended_at');
             });
         }
+
+        return $query;
+    }
+
+    private function applyPaymentProjectFilters($query)
+    {
+        if ($this->filter->service) {
+            $query->whereHas('invoice.project', fn ($q) => $q->where('service_type', $this->filter->service));
+        }
+        if ($this->filter->client_type) {
+            $query->whereHas('invoice.project.client', fn ($q) => $q->where('client_type', $this->filter->client_type));
+        }
+        if ($this->filter->status) {
+            $query->whereHas('invoice.project', fn ($q) => $q->where('status', $this->filter->status));
+        }
+        if ($this->filter->pic_id) {
+            $query->whereHas('invoice.project.assignments', function ($q) {
+                $q->where('user_id', $this->filter->pic_id)->whereNull('ended_at');
+            });
+        }
+
         return $query;
     }
 
     public function getKpis(): array
     {
         return Cache::remember($this->getCacheKey('kpis'), self::CACHE_TTL, function () {
-            
+
             // 1. Kas Masuk (Verified Payments for Commercial Invoices)
             $paymentsBaseQuery = Payment::query()
                 ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
                 ->where('payments.status', PaymentStatus::VERIFIED->value)
                 ->whereIn('invoices.invoice_type', [
-                    InvoiceType::ACTIVATION->value, 
-                    InvoiceType::INSTALLMENT->value, 
-                    InvoiceType::SETTLEMENT->value
+                    InvoiceType::ACTIVATION->value,
+                    InvoiceType::INSTALLMENT->value,
+                    InvoiceType::SETTLEMENT->value,
                 ]);
 
             if ($this->filter->period_start) {
@@ -85,31 +104,29 @@ class FinanceDashboardService
             if ($this->filter->payment_method) {
                 $paymentsBaseQuery->where('payments.payment_method', $this->filter->payment_method);
             }
-            
-            $paymentsQuery = Payment::query()->fromSub($paymentsBaseQuery, 'payments_filtered')
-                ->join('invoices', 'payments_filtered.invoice_id', '=', 'invoices.id');
-            $this->applyProjectFilters($paymentsQuery);
+
+            $paymentsQuery = $this->applyPaymentProjectFilters($paymentsBaseQuery);
 
             $kasMasukKlien = (clone $paymentsQuery)
                 ->where('invoices.audience', InvoiceAudience::CLIENT->value)
-                ->sum('payments_filtered.amount');
-                
+                ->sum('payments.amount');
+
             $kasMasukMitra = (clone $paymentsQuery)
                 ->where('invoices.audience', InvoiceAudience::PARTNER->value)
-                ->sum('payments_filtered.amount');
-                
+                ->sum('payments.amount');
+
             $totalKasMasuk = $kasMasukKlien + $kasMasukMitra;
 
             // 2. Project Bertagih & Billing Group
             $invoicesBaseQuery = Invoice::query()
                 ->whereIn('invoice_type', [
-                    InvoiceType::ACTIVATION->value, 
-                    InvoiceType::INSTALLMENT->value, 
-                    InvoiceType::SETTLEMENT->value
+                    InvoiceType::ACTIVATION->value,
+                    InvoiceType::INSTALLMENT->value,
+                    InvoiceType::SETTLEMENT->value,
                 ])
                 ->where('status', '!=', InvoiceStatus::CANCELLED->value)
                 ->where('status', '!=', InvoiceStatus::DRAFT->value);
-                
+
             if ($this->filter->period_start) {
                 $invoicesBaseQuery->whereDate('issued_at', '>=', $this->filter->period_start);
             }
@@ -125,7 +142,7 @@ class FinanceDashboardService
             if ($this->filter->invoice_status) {
                 $invoicesBaseQuery->where('status', $this->filter->invoice_status);
             }
-            
+
             $this->applyProjectFilters($invoicesBaseQuery);
 
             $projectBertagih = (clone $invoicesBaseQuery)->distinct('project_id')->count('project_id');
@@ -135,16 +152,16 @@ class FinanceDashboardService
             // 3. Outstanding Receivables (as of period_end)
             // Rumus: Total Invoice PUBLISHED/PARTIAL s.d as_of - Total Payment VERIFIED s.d as_of
             $asOfDate = $this->filter->period_end ?? Carbon::now();
-            
+
             $outstandingQuery = Invoice::query()
                 ->whereIn('invoice_type', [
-                    InvoiceType::ACTIVATION->value, 
-                    InvoiceType::INSTALLMENT->value, 
-                    InvoiceType::SETTLEMENT->value
+                    InvoiceType::ACTIVATION->value,
+                    InvoiceType::INSTALLMENT->value,
+                    InvoiceType::SETTLEMENT->value,
                 ])
                 ->whereIn('status', [InvoiceStatus::PUBLISHED->value, InvoiceStatus::PARTIAL->value])
                 ->whereDate('issued_at', '<=', $asOfDate);
-                
+
             if ($this->filter->audience) {
                 $outstandingQuery->where('audience', $this->filter->audience);
             }
@@ -153,11 +170,11 @@ class FinanceDashboardService
             $outstandingKlien = 0;
             $outstandingMitra = 0;
 
-            // Untuk performa lebih baik kita bisa fetch invoice dan total paid-nya, 
+            // Untuk performa lebih baik kita bisa fetch invoice dan total paid-nya,
             // atau menggunakan subquery
-            $invoicesForOutstanding = $outstandingQuery->with(['payments' => function($q) use ($asOfDate) {
+            $invoicesForOutstanding = $outstandingQuery->with(['payments' => function ($q) use ($asOfDate) {
                 $q->where('status', PaymentStatus::VERIFIED->value)
-                  ->whereDate('payment_date', '<=', $asOfDate);
+                    ->whereDate('payment_date', '<=', $asOfDate);
             }])->get();
 
             foreach ($invoicesForOutstanding as $inv) {
@@ -175,11 +192,11 @@ class FinanceDashboardService
             $totalOutstanding = $outstandingKlien + $outstandingMitra;
 
             // 4. Pending Payment
-            // Snapshot pada saat Dashboard dibuka, tidak pakai rentang waktu, 
+            // Snapshot pada saat Dashboard dibuka, tidak pakai rentang waktu,
             // tapi kita tetep apply filter project
             $pendingPaymentsQ = Payment::query()->where('status', PaymentStatus::PENDING->value);
             $this->applyProjectFilters($pendingPaymentsQ);
-            
+
             $pendingPaymentCount = $pendingPaymentsQ->count();
             $pendingPaymentAmount = $pendingPaymentsQ->sum('amount');
 
@@ -197,9 +214,9 @@ class FinanceDashboardService
         return Cache::remember($this->getCacheKey('revenue_trend'), self::CACHE_TTL, function () {
             $start = $this->filter->period_start ?? Carbon::now()->startOfMonth();
             $end = $this->filter->period_end ?? Carbon::now()->endOfMonth();
-            
+
             $daysDiff = $start->diffInDays($end);
-            
+
             $groupBy = 'DATE(payments.payment_date)';
             if ($daysDiff > 180) {
                 // Monthly
@@ -211,24 +228,24 @@ class FinanceDashboardService
                 // Weekly
                 $groupBy = "strftime('%Y-%W', payments.payment_date)";
                 if (config('database.default') !== 'sqlite') {
-                    $groupBy = "YEARWEEK(payments.payment_date)"; // Mysql
+                    $groupBy = 'YEARWEEK(payments.payment_date)'; // Mysql
                 }
             }
-            
+
             $paymentsQuery = Payment::query()
-                ->select(DB::raw("{$groupBy} as date_group"), DB::raw("SUM(payments.amount) as total"))
+                ->select(DB::raw("{$groupBy} as date_group"), DB::raw('SUM(payments.amount) as total'))
                 ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
                 ->where('payments.status', PaymentStatus::VERIFIED->value)
                 ->whereIn('invoices.invoice_type', [
-                    InvoiceType::ACTIVATION->value, 
-                    InvoiceType::INSTALLMENT->value, 
-                    InvoiceType::SETTLEMENT->value
+                    InvoiceType::ACTIVATION->value,
+                    InvoiceType::INSTALLMENT->value,
+                    InvoiceType::SETTLEMENT->value,
                 ])
                 ->whereDate('payments.payment_date', '>=', $start)
                 ->whereDate('payments.payment_date', '<=', $end)
                 ->groupBy('date_group')
                 ->orderBy('date_group');
-                
+
             $this->applyProjectFilters($paymentsQuery);
 
             return $paymentsQuery->get()->pluck('total', 'date_group')->toArray();
@@ -239,18 +256,18 @@ class FinanceDashboardService
     {
         return Cache::remember($this->getCacheKey('aging_summary'), self::CACHE_TTL, function () {
             $asOfDate = $this->filter->period_end ?? Carbon::now();
-            
+
             $invoices = Invoice::query()
                 ->whereIn('invoice_type', [
-                    InvoiceType::ACTIVATION->value, 
-                    InvoiceType::INSTALLMENT->value, 
-                    InvoiceType::SETTLEMENT->value
+                    InvoiceType::ACTIVATION->value,
+                    InvoiceType::INSTALLMENT->value,
+                    InvoiceType::SETTLEMENT->value,
                 ])
                 ->whereIn('status', [InvoiceStatus::PUBLISHED->value, InvoiceStatus::PARTIAL->value])
                 ->whereDate('issued_at', '<=', $asOfDate)
-                ->with(['payments' => function($q) use ($asOfDate) {
+                ->with(['payments' => function ($q) use ($asOfDate) {
                     $q->where('status', PaymentStatus::VERIFIED->value)
-                      ->whereDate('payment_date', '<=', $asOfDate);
+                        ->whereDate('payment_date', '<=', $asOfDate);
                 }])
                 ->get();
 
@@ -265,7 +282,7 @@ class FinanceDashboardService
             foreach ($invoices as $inv) {
                 $paid = $inv->payments->sum('amount');
                 $sisa = $inv->total - $paid;
-                
+
                 if ($sisa > 0) {
                     $dueDate = Carbon::parse($inv->due_date);
                     if ($dueDate->greaterThanOrEqualTo($asOfDate)) {
@@ -294,24 +311,24 @@ class FinanceDashboardService
         $query = Payment::query()
             ->where('status', PaymentStatus::PENDING->value)
             ->with(['invoice.project.client']);
-            
+
         return $this->applyProjectFilters($query);
     }
 
     public function getOverdueInvoicesQuery()
     {
         $asOfDate = $this->filter->period_end ?? Carbon::now();
-        
+
         $query = Invoice::query()
             ->whereIn('invoice_type', [
-                InvoiceType::ACTIVATION->value, 
-                InvoiceType::INSTALLMENT->value, 
-                InvoiceType::SETTLEMENT->value
+                InvoiceType::ACTIVATION->value,
+                InvoiceType::INSTALLMENT->value,
+                InvoiceType::SETTLEMENT->value,
             ])
             ->whereIn('status', [InvoiceStatus::PUBLISHED->value, InvoiceStatus::PARTIAL->value])
             ->whereDate('due_date', '<', $asOfDate)
             ->with(['project.client', 'payments']);
-            
+
         return $this->applyProjectFilters($query);
     }
 
@@ -319,59 +336,77 @@ class FinanceDashboardService
     {
         $query = Invoice::query()
             ->whereIn('invoice_type', [
-                InvoiceType::ACTIVATION->value, 
-                InvoiceType::INSTALLMENT->value, 
-                InvoiceType::SETTLEMENT->value
+                InvoiceType::ACTIVATION->value,
+                InvoiceType::INSTALLMENT->value,
+                InvoiceType::SETTLEMENT->value,
             ]);
 
         if ($kpiType === 'outstandingKlien' || $kpiType === 'outstandingMitra') {
             $query->whereIn('status', [InvoiceStatus::PUBLISHED->value, InvoiceStatus::PARTIAL->value])
-                  ->whereDate('issued_at', '<=', $this->filter->period_end ?? Carbon::now());
-                  
-            if ($kpiType === 'outstandingKlien') $query->where('audience', InvoiceAudience::CLIENT->value);
-            if ($kpiType === 'outstandingMitra') $query->where('audience', InvoiceAudience::PARTNER->value);
-        } else if ($kpiType === 'projectBertagih' || $kpiType === 'jumlahInvoice') {
+                ->whereDate('issued_at', '<=', $this->filter->period_end ?? Carbon::now());
+
+            if ($kpiType === 'outstandingKlien') {
+                $query->where('audience', InvoiceAudience::CLIENT->value);
+            }
+            if ($kpiType === 'outstandingMitra') {
+                $query->where('audience', InvoiceAudience::PARTNER->value);
+            }
+        } elseif ($kpiType === 'projectBertagih' || $kpiType === 'jumlahInvoice') {
             $query->where('status', '!=', InvoiceStatus::CANCELLED->value)
-                  ->where('status', '!=', InvoiceStatus::DRAFT->value);
-            if ($this->filter->period_start) $query->whereDate('issued_at', '>=', $this->filter->period_start);
-            if ($this->filter->period_end) $query->whereDate('issued_at', '<=', $this->filter->period_end);
+                ->where('status', '!=', InvoiceStatus::DRAFT->value);
+            if ($this->filter->period_start) {
+                $query->whereDate('issued_at', '>=', $this->filter->period_start);
+            }
+            if ($this->filter->period_end) {
+                $query->whereDate('issued_at', '<=', $this->filter->period_end);
+            }
         }
 
-        if ($this->filter->audience && !in_array($kpiType, ['outstandingKlien', 'outstandingMitra'])) {
+        if ($this->filter->audience && ! in_array($kpiType, ['outstandingKlien', 'outstandingMitra'])) {
             $query->where('audience', $this->filter->audience);
         }
-        
+
         $query->with(['project.client', 'payments']);
+
         return $this->applyProjectFilters($query);
     }
-    
+
     public function getPaymentDrillDownQuery(string $kpiType)
     {
         $query = Payment::query()
             ->join('invoices', 'payments.invoice_id', '=', 'invoices.id')
             ->select('payments.*')
             ->whereIn('invoices.invoice_type', [
-                InvoiceType::ACTIVATION->value, 
-                InvoiceType::INSTALLMENT->value, 
-                InvoiceType::SETTLEMENT->value
+                InvoiceType::ACTIVATION->value,
+                InvoiceType::INSTALLMENT->value,
+                InvoiceType::SETTLEMENT->value,
             ]);
 
         if (in_array($kpiType, ['kasMasukKlien', 'kasMasukMitra', 'totalKasMasuk'])) {
             $query->where('payments.status', PaymentStatus::VERIFIED->value);
-            if ($kpiType === 'kasMasukKlien') $query->where('invoices.audience', InvoiceAudience::CLIENT->value);
-            if ($kpiType === 'kasMasukMitra') $query->where('invoices.audience', InvoiceAudience::PARTNER->value);
-            
-            if ($this->filter->period_start) $query->whereDate('payments.payment_date', '>=', $this->filter->period_start);
-            if ($this->filter->period_end) $query->whereDate('payments.payment_date', '<=', $this->filter->period_end);
-        } else if ($kpiType === 'pendingPaymentCount') {
+            if ($kpiType === 'kasMasukKlien') {
+                $query->where('invoices.audience', InvoiceAudience::CLIENT->value);
+            }
+            if ($kpiType === 'kasMasukMitra') {
+                $query->where('invoices.audience', InvoiceAudience::PARTNER->value);
+            }
+
+            if ($this->filter->period_start) {
+                $query->whereDate('payments.payment_date', '>=', $this->filter->period_start);
+            }
+            if ($this->filter->period_end) {
+                $query->whereDate('payments.payment_date', '<=', $this->filter->period_end);
+            }
+        } elseif ($kpiType === 'pendingPaymentCount') {
             $query->where('payments.status', PaymentStatus::PENDING->value);
         }
-        
-        if ($this->filter->audience && !in_array($kpiType, ['kasMasukKlien', 'kasMasukMitra'])) {
+
+        if ($this->filter->audience && ! in_array($kpiType, ['kasMasukKlien', 'kasMasukMitra'])) {
             $query->where('invoices.audience', $this->filter->audience);
         }
 
         $query->with(['invoice.project.client']);
+
         return $this->applyProjectFilters($query);
     }
 }

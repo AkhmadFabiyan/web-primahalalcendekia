@@ -2,18 +2,19 @@
 
 namespace App\Modules\Payments\Services;
 
-use App\Modules\Payments\Models\Payment;
-use App\Modules\Payments\Models\Invoice;
-use App\Modules\Payments\Enums\PaymentStatus;
 use App\Modules\Payments\Enums\InvoiceStatus;
-use App\Modules\Payments\Enums\InvoiceAudience;
 use App\Modules\Payments\Enums\InvoiceType;
-use App\Modules\Payments\Events\ActivationBillingGroupPaid;
-use Illuminate\Support\Facades\DB;
-use Exception;
-
-use App\Modules\Payments\Models\Receipt;
+use App\Modules\Payments\Enums\PaymentStatus;
 use App\Modules\Payments\Enums\ReceiptType;
+use App\Modules\Payments\Events\ActivationBillingGroupPaid;
+use App\Modules\Payments\Events\GovernmentInvoicePaid;
+use App\Modules\Payments\Models\Invoice;
+use App\Modules\Payments\Models\Payment;
+use App\Modules\Payments\Models\Receipt;
+use App\Modules\Projects\Models\Project;
+use App\Modules\Projects\Services\ProjectCompletionService;
+use Exception;
+use Illuminate\Support\Facades\DB;
 
 class PaymentService
 {
@@ -30,9 +31,9 @@ class PaymentService
         return DB::transaction(function () use ($invoice, $data, $proofFile) {
             // Lock the invoice
             $lockedInvoice = Invoice::where('id', $invoice->id)->lockForUpdate()->first();
-            
-            if (!in_array($lockedInvoice->status, [InvoiceStatus::PUBLISHED, InvoiceStatus::PARTIAL])) {
-                throw new Exception("Pembayaran hanya dapat dicatat untuk Invoice yang diterbitkan atau dibayar sebagian.");
+
+            if (! in_array($lockedInvoice->status, [InvoiceStatus::PUBLISHED, InvoiceStatus::PARTIAL])) {
+                throw new Exception('Pembayaran hanya dapat dicatat untuk Invoice yang diterbitkan atau dibayar sebagian.');
             }
 
             // Calculate pending + verified total
@@ -43,11 +44,11 @@ class PaymentService
             $availableBalance = $lockedInvoice->total - $existingTotal;
 
             if ($data['amount'] > $availableBalance) {
-                throw new Exception("Nominal pembayaran melebihi sisa tagihan yang belum terbayar atau masih diproses.");
+                throw new Exception('Nominal pembayaran melebihi sisa tagihan yang belum terbayar atau masih diproses.');
             }
-            
+
             if ($data['amount'] <= 0) {
-                throw new Exception("Nominal pembayaran harus lebih besar dari 0.");
+                throw new Exception('Nominal pembayaran harus lebih besar dari 0.');
             }
 
             $payment = new Payment([
@@ -62,7 +63,7 @@ class PaymentService
             ]);
 
             $payment->save();
-            
+
             if ($proofFile) {
                 $payment->addMedia($proofFile)
                     ->toMediaCollection('payment-proofs', 'private');
@@ -82,20 +83,20 @@ class PaymentService
             $lockedInvoice = Invoice::where('id', $lockedPayment->invoice_id)->lockForUpdate()->first();
 
             if ($lockedPayment->status !== PaymentStatus::PENDING) {
-                throw new Exception("Hanya pembayaran berstatus PENDING yang dapat diverifikasi.");
+                throw new Exception('Hanya pembayaran berstatus PENDING yang dapat diverifikasi.');
             }
 
-            if (!in_array($lockedInvoice->status, [InvoiceStatus::PUBLISHED, InvoiceStatus::PARTIAL])) {
-                throw new Exception("Invoice sudah tidak valid untuk menerima pembayaran (mungkin sudah lunas atau dibatalkan).");
+            if (! in_array($lockedInvoice->status, [InvoiceStatus::PUBLISHED, InvoiceStatus::PARTIAL])) {
+                throw new Exception('Invoice sudah tidak valid untuk menerima pembayaran (mungkin sudah lunas atau dibatalkan).');
             }
-            
+
             // Recalculate verified only total to check overpayment again just in case
             $verifiedTotal = $lockedInvoice->payments()
                 ->where('status', PaymentStatus::VERIFIED)
                 ->sum('amount');
-                
+
             if (($verifiedTotal + $lockedPayment->amount) > $lockedInvoice->total) {
-                throw new Exception("Pembayaran ini tidak dapat diverifikasi karena akan menyebabkan overpayment.");
+                throw new Exception('Pembayaran ini tidak dapat diverifikasi karena akan menyebabkan overpayment.');
             }
 
             $lockedPayment->status = PaymentStatus::VERIFIED;
@@ -105,9 +106,9 @@ class PaymentService
             $lockedPayment->save();
 
             $newVerifiedTotal = $verifiedTotal + $lockedPayment->amount;
-            
-            $newInvoiceStatus = ($newVerifiedTotal >= $lockedInvoice->total) 
-                ? InvoiceStatus::PAID 
+
+            $newInvoiceStatus = ($newVerifiedTotal >= $lockedInvoice->total)
+                ? InvoiceStatus::PAID
                 : InvoiceStatus::PARTIAL;
 
             $lockedInvoice->status = $newInvoiceStatus;
@@ -130,7 +131,7 @@ class PaymentService
                     ->where('receipt_type', ReceiptType::SETTLEMENT_RECEIPT)
                     ->exists();
 
-                if (!$exists) {
+                if (! $exists) {
                     Receipt::create([
                         'receipt_number' => $this->receiptSequenceService->generateNextNumber(),
                         'invoice_id' => $lockedInvoice->id,
@@ -142,7 +143,7 @@ class PaymentService
                     ]);
                 }
             }
-            
+
             $this->checkAndEmitActivationEvent($lockedInvoice, $lockedPayment);
             $this->checkAndEmitGovernmentEvent($lockedInvoice, $lockedPayment);
             $this->checkAndEmitCompletionEvent($lockedInvoice);
@@ -154,55 +155,55 @@ class PaymentService
     /**
      * Reject a payment.
      *
-     * @param string $paymentId
-     * @param array $data
-     * @return Payment
+     * @param  string  $paymentId
      */
-    public function rejectPayment(string $paymentId, array $data): Payment
+    public function rejectPayment(Payment|string $payment, array $data): Payment
     {
+        $paymentId = $payment instanceof Payment ? $payment->getKey() : $payment;
+
         return DB::transaction(function () use ($paymentId, $data) {
             $lockedPayment = Payment::where('id', $paymentId)->lockForUpdate()->firstOrFail();
 
             if ($lockedPayment->status !== PaymentStatus::PENDING) {
-                throw new Exception("Hanya pembayaran berstatus PENDING yang dapat ditolak.");
+                throw new Exception('Hanya pembayaran berstatus PENDING yang dapat ditolak.');
             }
 
             $lockedPayment->status = PaymentStatus::REJECTED;
-            $lockedPayment->verification_notes = $data['verification_notes'] ?? null;
-            $lockedPayment->verified_by = auth()->id();
-            $lockedPayment->verified_at = now();
+            $lockedPayment->rejection_reason = $data['rejection_reason'] ?? $data['verification_notes'] ?? null;
+            $lockedPayment->rejected_by = auth()->id();
+            $lockedPayment->rejected_at = now();
             $lockedPayment->save();
 
             return $lockedPayment;
         });
     }
-    
+
     private function checkAndEmitCompletionEvent(Invoice $invoice): void
     {
         if ($invoice->project_id) {
-            $project = \App\Modules\Projects\Models\Project::find($invoice->project_id);
+            $project = Project::find($invoice->project_id);
             if ($project) {
-                app(\App\Modules\Projects\Services\ProjectCompletionService::class)->checkCompletion($project);
+                app(ProjectCompletionService::class)->checkCompletion($project);
             }
         }
     }
-    
+
     private function checkAndEmitActivationEvent(Invoice $invoice, Payment $payment): void
     {
         if ($invoice->invoice_type !== InvoiceType::ACTIVATION) {
             return;
         }
-        
+
         if ($invoice->status !== InvoiceStatus::PAID) {
             return;
         }
-        
+
         // Check for partner
         if ($invoice->project->client->partner_id) {
             // For partner, both invoices in the billing group must be PAID
             $invoicesInGroup = Invoice::where('billing_group_id', $invoice->billing_group_id)->get();
             $allPaid = $invoicesInGroup->every(fn ($inv) => $inv->status === InvoiceStatus::PAID);
-            
+
             if ($allPaid) {
                 event(new ActivationBillingGroupPaid(
                     $invoice->project_id,
@@ -221,7 +222,7 @@ class PaymentService
             ));
         }
     }
-    
+
     private function checkAndEmitGovernmentEvent(Invoice $invoice, Payment $payment): void
     {
         if ($invoice->invoice_type !== InvoiceType::GOVERNMENT) {
@@ -232,7 +233,7 @@ class PaymentService
             return;
         }
 
-        event(new \App\Modules\Payments\Events\GovernmentInvoicePaid(
+        event(new GovernmentInvoicePaid(
             $invoice->project_id,
             $invoice->id,
             $payment->id,

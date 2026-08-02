@@ -1,9 +1,13 @@
 <?php
 
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -23,12 +27,12 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*'),
         );
 
-        $exceptions->render(function (\Throwable $e, Request $request) {
+        $exceptions->render(function (Throwable $e, Request $request) {
             $isForbidden = false;
 
-            if ($e instanceof \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException || $e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+            if ($e instanceof AccessDeniedHttpException || $e instanceof AuthorizationException) {
                 $isForbidden = true;
-            } elseif ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface && $e->getStatusCode() === 403) {
+            } elseif ($e instanceof HttpExceptionInterface && $e->getStatusCode() === 403) {
                 $isForbidden = true;
             }
 
@@ -37,8 +41,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     return response()->json(['message' => 'Not Found.'], 404);
                 }
 
-                return new \Illuminate\Http\RedirectResponse('/admin');
+                if ($request->route()?->getName() === 'filament.admin.pages.dashboard') {
+                    return response('Forbidden', 403);
+                }
+
+                return new RedirectResponse(
+                    route('filament.admin.pages.dashboard'),
+                );
             }
         });
     })->create();
-

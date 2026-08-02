@@ -4,7 +4,6 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Modules\Workflows\Models\Task;
-use Illuminate\Auth\Access\Response;
 
 class TaskPolicy
 {
@@ -15,7 +14,9 @@ class TaskPolicy
     {
         return $user->hasRole([
             'Super Admin',
+            'Direktur',
             'Manager Operasional',
+            'Admin',
             'Admin Perusahaan',
             'Entry',
             'SPV Entry',
@@ -29,7 +30,7 @@ class TaskPolicy
      */
     public function view(User $user, Task $task): bool
     {
-        if ($user->hasRole(['Super Admin', 'Manager Operasional'])) {
+        if ($user->hasRole(['Super Admin', 'Direktur', 'Manager Operasional'])) {
             return true;
         }
 

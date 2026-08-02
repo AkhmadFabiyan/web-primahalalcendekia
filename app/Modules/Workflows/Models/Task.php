@@ -5,6 +5,7 @@ namespace App\Modules\Workflows\Models;
 use App\Models\User;
 use App\Modules\Projects\Enums\AssignmentRole;
 use App\Modules\Projects\Models\Project;
+use App\Modules\Projects\Traits\LocksWhenProjectLocked;
 use App\Modules\Workflows\Enums\TaskPriority;
 use App\Modules\Workflows\Enums\TaskStatus;
 use App\Modules\Workflows\Enums\TaskType;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
 {
-    use HasUuids, HasFactory, \App\Modules\Projects\Traits\LocksWhenProjectLocked;
+    use HasFactory, HasUuids, LocksWhenProjectLocked;
 
     protected $guarded = [];
 
@@ -58,6 +59,12 @@ class Task extends Model
     {
         return $this->hasMany(TaskChecklistItem::class);
     }
+
+    public function slaCycles(): HasMany
+    {
+        return $this->hasMany(TaskSlaCycle::class);
+    }
+
     public function parentTask(): BelongsTo
     {
         return $this->belongsTo(Task::class, 'parent_task_id');

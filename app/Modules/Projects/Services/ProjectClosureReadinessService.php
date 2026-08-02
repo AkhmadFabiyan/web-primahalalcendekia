@@ -2,10 +2,12 @@
 
 namespace App\Modules\Projects\Services;
 
-use App\Modules\Projects\Models\Project;
-use App\Modules\Projects\Enums\ProjectStatus;
+use App\Modules\Clients\Enums\ClientType;
 use App\Modules\Payments\Enums\InvoiceStatus;
+use App\Modules\Payments\Enums\InvoiceType;
 use App\Modules\Payments\Enums\PaymentStatus;
+use App\Modules\Projects\Models\Certificate;
+use App\Modules\Projects\Models\Project;
 use App\Modules\Workflows\Enums\TaskStatus;
 
 class ProjectClosureReadinessService
@@ -13,19 +15,18 @@ class ProjectClosureReadinessService
     /**
      * Mengevaluasi 12 kriteria checklist penyelesaian
      *
-     * @param Project $project
      * @return array<string, bool> Array checklist
      */
-    public static function evaluate(Project $project): array
+    public function evaluate(Project $project): array
     {
         $project->loadMissing(['invoices.payments', 'paymentSchedules', 'tasks', 'client']);
         $financialSummary = ProjectFinancialSummaryService::calculate($project);
 
         // 1. Sertifikat telah diterbitkan
-        $certIssued = \App\Modules\Projects\Models\Certificate::where('project_id', $project->id)->exists();
+        $certIssued = Certificate::where('project_id', $project->id)->exists();
 
         // 2. Invoice Negara telah dibayar
-        $govInvoice = $project->invoices->where('invoice_type', \App\Modules\Payments\Enums\InvoiceType::GOVERNMENT)->first();
+        $govInvoice = $project->invoices->where('invoice_type', InvoiceType::GOVERNMENT)->first();
         $govInvoicePaid = $govInvoice ? $govInvoice->status === InvoiceStatus::PAID : true; // Jika tidak ada, diabaikan/true
 
         // 3. Tidak ada Invoice aktif berstatus DRAFT
@@ -51,21 +52,21 @@ class ProjectClosureReadinessService
 
         // 8. Sisa belum ditagihkan bernilai 0
         // (client_remaining_uninvoiced + partner_remaining_uninvoiced == 0)
-        $noUninvoiced = bccomp((string)$financialSummary['client_remaining_uninvoiced'], '0', 2) <= 0
-            && bccomp((string)$financialSummary['partner_remaining_uninvoiced'], '0', 2) <= 0;
+        $noUninvoiced = bccomp((string) $financialSummary['client_remaining_uninvoiced'], '0', 2) <= 0
+            && bccomp((string) $financialSummary['partner_remaining_uninvoiced'], '0', 2) <= 0;
 
         // 9. Sisa belum dibayar bernilai 0
-        $noUnpaid = bccomp((string)$financialSummary['client_remaining_unpaid'], '0', 2) <= 0
-            && bccomp((string)$financialSummary['partner_remaining_unpaid'], '0', 2) <= 0;
+        $noUnpaid = bccomp((string) $financialSummary['client_remaining_unpaid'], '0', 2) <= 0
+            && bccomp((string) $financialSummary['partner_remaining_unpaid'], '0', 2) <= 0;
 
         // 10. Seluruh kewajiban CLIENT telah lunas
-        $clientPaid = bccomp((string)$financialSummary['client_remaining_unpaid'], '0', 2) <= 0;
+        $clientPaid = bccomp((string) $financialSummary['client_remaining_unpaid'], '0', 2) <= 0;
 
         // 11. Seluruh kewajiban PARTNER telah lunas, jika tipe Mitra
         // Jika tidak tipe mitra, otomatis true
         $partnerPaid = true;
-        if ($project->client && $project->client->client_type === \App\Modules\Clients\Enums\ClientType::PARTNER) {
-            $partnerPaid = bccomp((string)$financialSummary['partner_remaining_unpaid'], '0', 2) <= 0;
+        if ($project->client && $project->client->client_type === ClientType::PARTNER) {
+            $partnerPaid = bccomp((string) $financialSummary['partner_remaining_unpaid'], '0', 2) <= 0;
         }
 
         // 12. Tidak ada Task wajib yang masih terbuka
@@ -90,12 +91,9 @@ class ProjectClosureReadinessService
 
     /**
      * Cek apakah seluruh checklist bernilai true
-     * 
-     * @param array $checklist
-     * @return bool
      */
-    public static function isReady(array $checklist): bool
+    public function isReady(array $checklist): bool
     {
-        return !in_array(false, $checklist, true);
+        return ! in_array(false, $checklist, true);
     }
 }

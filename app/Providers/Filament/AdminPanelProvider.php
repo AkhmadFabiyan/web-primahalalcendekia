@@ -83,6 +83,12 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 \App\Http\Middleware\RedirectClientFromInternalRoutes::class,
-            ]);
+            ])
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::HEAD_END,
+                fn (): string => request()->routeIs('filament.admin.auth.*') 
+                    ? '<meta name="robots" content="noindex, nofollow">' 
+                    : ''
+            );
     }
 }

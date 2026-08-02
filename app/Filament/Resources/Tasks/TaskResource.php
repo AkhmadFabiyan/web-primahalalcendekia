@@ -2,37 +2,93 @@
 
 namespace App\Filament\Resources\Tasks;
 
-use App\Filament\Resources\Tasks\Pages;
+use App\Enums\Role;
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\RoleNavigation;
+use App\Models\User;
+use App\Modules\Workflows\Enums\SlaCycleStatus;
 use App\Modules\Workflows\Enums\TaskStatus;
+use App\Modules\Workflows\Enums\TaskType;
 use App\Modules\Workflows\Models\Task;
+use App\Modules\Workflows\Services\EntryWorkflowService;
+use App\Modules\Workflows\Services\PersonalWorkloadService;
+use App\Modules\Workflows\Services\SlaManagerService;
+use App\Modules\Workflows\Services\SpvEntryWorkflowService;
+use Carbon\Carbon;
+use Filament\Actions\Action;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class TaskResource extends Resource
 {
     protected static ?string $model = Task::class;
+
     protected static bool $isGloballySearchable = true;
+
     protected static ?string $recordTitleAttribute = 'title';
+
     protected static int $globalSearchResultsLimit = 10;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
+
     protected static ?string $navigationLabel = 'Tugas';
+
     protected static ?string $modelLabel = 'Tugas';
+
     protected static ?string $pluralModelLabel = 'Tugas';
+
     protected static ?int $navigationSort = 3;
+
+    public static function getNavigationGroup(): string
+    {
+        return RoleNavigation::forModule('tasks');
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = auth()->user();
+
+        // Admin uses the purpose-built document queue. Direktur monitors
+        // work from dashboards/reports, while Klien never sees internal menus.
+        return $user !== null && ! $user->hasAnyRole([
+            Role::ADMIN->value,
+            Role::DIREKTUR->value,
+            Role::KLIEN->value,
+        ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()->with(['project.client', 'assignee']);
+        /** @var User|null $user */
+        $user = auth()->user();
+
+        if ($user && ! $user->hasAnyRole([
+            Role::SUPER_ADMIN->value,
+            Role::DIREKTUR->value,
+            Role::MANAGER_OPERASIONAL->value,
+        ])) {
+            $query->where('assigned_to', $user->id);
+        }
+
+        return $query;
+    }
 
     public static function getNavigationBadge(): ?string
     {
-        /** @var \App\Models\User */
+        /** @var User */
         $user = auth()->user();
 
         // If user is super admin or manajerial, we might show a different count or just their own.
         // For Phase 30, we use PersonalWorkloadService for consistency.
-        $service = app(\App\Modules\Workflows\Services\PersonalWorkloadService::class);
+        $service = app(PersonalWorkloadService::class);
         $count = $service->getActiveTasksCount($user);
 
         return $count > 0 ? (string) $count : null;
@@ -43,12 +99,12 @@ class TaskResource extends Resource
         return ['title', 'project.client.business_id', 'project.client.company_name'];
     }
 
-    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultTitle(Model $record): string
     {
         return $record->title;
     }
 
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         return [
             'Client' => $record->project?->client?->company_name ?? '-',
@@ -57,7 +113,7 @@ class TaskResource extends Resource
         ];
     }
 
-    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultUrl(Model $record): string
     {
         return TaskResource::getUrl('index'); // We don't have a view page for task directly yet, usually open project
     }
@@ -67,15 +123,19 @@ class TaskResource extends Resource
         $query = parent::getGlobalSearchEloquentQuery()->with(['project.client']);
 
         $user = auth()->user();
-        if ($user) {
+        if ($user && ! $user->hasAnyRole([
+            Role::SUPER_ADMIN->value,
+            Role::DIREKTUR->value,
+            Role::MANAGER_OPERASIONAL->value,
+        ])) {
             $query->where(function ($q) use ($user) {
                 $q->where('assigned_to', $user->id)
-                  ->orWhereExists(function ($sub) use ($user) {
-                      $sub->select(\Illuminate\Support\Facades\DB::raw(1))
-                          ->from('project_assignments')
-                          ->whereColumn('project_assignments.project_id', 'tasks.project_id')
-                          ->where('project_assignments.user_id', $user->id);
-                  });
+                    ->orWhereExists(function ($sub) use ($user) {
+                        $sub->select(DB::raw(1))
+                            ->from('project_assignments')
+                            ->whereColumn('project_assignments.project_id', 'tasks.project_id')
+                            ->where('project_assignments.user_id', $user->id);
+                    });
             });
         }
 
@@ -105,7 +165,7 @@ class TaskResource extends Resource
                     ->label('Deadline')
                     ->dateTime()
                     ->sortable()
-                    ->color(fn (Task $record): string => match(true) {
+                    ->color(fn (Task $record): string => match (true) {
                         $record->status === TaskStatus::COMPLETED => 'success',
                         $record->deadline && now()->greaterThan($record->deadline) => 'danger',
                         $record->deadline && now()->diffInHours($record->deadline) < 24 => 'warning',
@@ -131,29 +191,29 @@ class TaskResource extends Resource
                     ->options(TaskStatus::class),
             ])
             ->actions([
-                Tables\Actions\Action::make('bukaProject')
+                Action::make('bukaProject')
                     ->label('Buka Project')
                     ->icon('heroicon-o-folder-open')
-                    ->url(fn (Task $record) => \App\Filament\Resources\Clients\ClientResource::getUrl('view', ['record' => $record->project->client_id]))
+                    ->url(fn (Task $record) => ClientResource::getUrl('view', ['record' => $record->project->client_id]))
                     ->openUrlInNewTab(),
-                Tables\Actions\Action::make('kerjakan')
+                Action::make('kerjakan')
                     ->label('Kerjakan')
                     ->icon('heroicon-o-play')
                     ->color('primary')
                     ->visible(fn (Task $record) => $record->status === TaskStatus::TODO && $record->assigned_to === auth()->id())
                     ->action(function (Task $record) {
                         try {
-                            if ($record->task_type === \App\Modules\Workflows\Enums\TaskType::SPV_ENTRY_REVIEW) {
-                                app(\App\Modules\Workflows\Services\SpvEntryWorkflowService::class)->startReview($record, auth()->user());
+                            if ($record->task_type === TaskType::SPV_ENTRY_REVIEW) {
+                                app(SpvEntryWorkflowService::class)->startReview($record, auth()->user());
                             } else {
-                                app(\App\Modules\Workflows\Services\EntryWorkflowService::class)->startEntry($record, auth()->user());
+                                app(EntryWorkflowService::class)->startEntry($record, auth()->user());
                             }
-                            \Filament\Notifications\Notification::make()->title('Tugas dimulai')->success()->send();
+                            Notification::make()->title('Tugas dimulai')->success()->send();
                         } catch (\Exception $e) {
-                            \Filament\Notifications\Notification::make()->title('Gagal memulai')->body($e->getMessage())->danger()->send();
+                            Notification::make()->title('Gagal memulai')->body($e->getMessage())->danger()->send();
                         }
                     }),
-                Tables\Actions\Action::make('pauseSla')
+                Action::make('pauseSla')
                     ->label('Pause SLA')
                     ->icon('heroicon-o-pause')
                     ->color('warning')
@@ -163,13 +223,14 @@ class TaskResource extends Resource
                     ])
                     ->visible(function (Task $record) {
                         $cycle = $record->slaCycles()->latest('cycle_number')->first();
-                        return $cycle && $cycle->status === \App\Modules\Workflows\Enums\SlaCycleStatus::ACTIVE;
+
+                        return $cycle && $cycle->status === SlaCycleStatus::ACTIVE;
                     })
                     ->action(function (Task $record, array $data) {
-                        app(\App\Modules\Workflows\Services\SlaManagerService::class)->pauseCycle($record, $data['reason'], auth()->id());
-                        \Filament\Notifications\Notification::make()->title('SLA Dipause')->success()->send();
+                        app(SlaManagerService::class)->pauseCycle($record, $data['reason'], auth()->id());
+                        Notification::make()->title('SLA Dipause')->success()->send();
                     }),
-                Tables\Actions\Action::make('resumeSla')
+                Action::make('resumeSla')
                     ->label('Resume SLA')
                     ->icon('heroicon-o-play-circle')
                     ->color('success')
@@ -179,13 +240,14 @@ class TaskResource extends Resource
                     ])
                     ->visible(function (Task $record) {
                         $cycle = $record->slaCycles()->latest('cycle_number')->first();
-                        return $cycle && $cycle->status === \App\Modules\Workflows\Enums\SlaCycleStatus::PAUSED;
+
+                        return $cycle && $cycle->status === SlaCycleStatus::PAUSED;
                     })
                     ->action(function (Task $record, array $data) {
-                        app(\App\Modules\Workflows\Services\SlaManagerService::class)->resumeCycle($record, $data['reason'], auth()->id());
-                        \Filament\Notifications\Notification::make()->title('SLA Diresume')->success()->send();
+                        app(SlaManagerService::class)->resumeCycle($record, $data['reason'], auth()->id());
+                        Notification::make()->title('SLA Diresume')->success()->send();
                     }),
-                Tables\Actions\Action::make('adjustDeadline')
+                Action::make('adjustDeadline')
                     ->label('Perpanjang SLA')
                     ->icon('heroicon-o-clock')
                     ->color('gray')
@@ -196,13 +258,14 @@ class TaskResource extends Resource
                     ])
                     ->visible(function (Task $record) {
                         $cycle = $record->slaCycles()->latest('cycle_number')->first();
-                        return $cycle && in_array($cycle->status, [\App\Modules\Workflows\Enums\SlaCycleStatus::ACTIVE, \App\Modules\Workflows\Enums\SlaCycleStatus::PAUSED]);
+
+                        return $cycle && in_array($cycle->status, [SlaCycleStatus::ACTIVE, SlaCycleStatus::PAUSED]);
                     })
                     ->action(function (Task $record, array $data) {
-                        app(\App\Modules\Workflows\Services\SlaManagerService::class)->adjustDeadline($record, \Carbon\Carbon::parse($data['new_deadline']), $data['reason'], auth()->id());
-                        \Filament\Notifications\Notification::make()->title('Deadline Diperbarui')->success()->send();
+                        app(SlaManagerService::class)->adjustDeadline($record, Carbon::parse($data['new_deadline']), $data['reason'], auth()->id());
+                        Notification::make()->title('Deadline Diperbarui')->success()->send();
                     }),
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([
                 // No bulk actions

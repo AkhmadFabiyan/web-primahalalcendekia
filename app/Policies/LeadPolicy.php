@@ -2,9 +2,11 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
+use App\Enums\Role;
 use App\Models\User;
+use App\Modules\Leads\Enums\LeadStatus;
 use App\Modules\Leads\Models\Lead;
-use Illuminate\Auth\Access\Response;
 
 class LeadPolicy
 {
@@ -13,7 +15,7 @@ class LeadPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermissionTo(\App\Enums\Permission::ViewLeads->value);
+        return $user->can(Permission::ViewLeads->value);
     }
 
     /**
@@ -21,11 +23,11 @@ class LeadPolicy
      */
     public function view(User $user, Lead $lead): bool
     {
-        if (! $user->hasPermissionTo(\App\Enums\Permission::ViewLeads->value)) {
+        if (! $user->can(Permission::ViewLeads->value)) {
             return false;
         }
 
-        if ($user->hasRole(\App\Enums\Role::MARKETING->value)) {
+        if ($user->hasRole(Role::MARKETING->value)) {
             return $lead->marketing_id === $user->id;
         }
 
@@ -37,7 +39,7 @@ class LeadPolicy
      */
     public function create(User $user): bool
     {
-        return $user->hasPermissionTo(\App\Enums\Permission::CreateLeads->value);
+        return $user->can(Permission::CreateLeads->value);
     }
 
     /**
@@ -45,16 +47,16 @@ class LeadPolicy
      */
     public function update(User $user, Lead $lead): bool
     {
-        if (! $user->hasPermissionTo(\App\Enums\Permission::UpdateLeads->value)) {
+        if (! $user->can(Permission::UpdateLeads->value)) {
             return false;
         }
 
         // Lead can only be edited if DRAFT
-        if ($lead->status !== \App\Modules\Leads\Enums\LeadStatus::DRAFT) {
+        if ($lead->status !== LeadStatus::DRAFT) {
             return false;
         }
 
-        if ($user->hasRole(\App\Enums\Role::MARKETING->value)) {
+        if ($user->hasRole(Role::MARKETING->value)) {
             return $lead->marketing_id === $user->id;
         }
 

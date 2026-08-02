@@ -2,22 +2,22 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
-use Tests\TestCase;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
+use App\Filament\Widgets\FinanceKpiWidget;
+use App\Filament\Widgets\FinanceRevenueChart;
 use App\Models\User;
-use App\Modules\Projects\Models\Project;
+use App\Modules\Clients\Enums\ClientType;
 use App\Modules\Clients\Models\Client;
+use App\Modules\Payments\Enums\InvoiceAudience;
+use App\Modules\Payments\Enums\InvoiceStatus;
+use App\Modules\Payments\Enums\InvoiceType;
+use App\Modules\Payments\Enums\PaymentStatus;
 use App\Modules\Payments\Models\Invoice;
 use App\Modules\Payments\Models\Payment;
-use App\Modules\Payments\Enums\InvoiceType;
-use App\Modules\Payments\Enums\InvoiceStatus;
-use App\Modules\Payments\Enums\PaymentStatus;
-use App\Modules\Payments\Enums\InvoiceAudience;
-use App\Modules\Clients\Enums\ClientType;
+use App\Modules\Projects\Models\Project;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
+use Tests\TestCase;
 
 class Phase32FinanceTest extends TestCase
 {
@@ -32,22 +32,22 @@ class Phase32FinanceTest extends TestCase
     public function test_only_users_with_permission_can_view_finance_widgets()
     {
         $userWithoutPermission = User::factory()->create();
-        
+
         $userWithPermission = User::factory()->create();
         $userWithPermission->givePermissionTo('dashboard.finance.view');
 
         // Without permission
         $this->actingAs($userWithoutPermission)
-             ->get('/dashboard')
-             ->assertSuccessful() // Should not 403, just hide widgets
-             ->assertDontSeeLivewire('finance-kpi-widget')
-             ->assertDontSeeLivewire('finance-revenue-chart');
+            ->get('/dashboard')
+            ->assertSuccessful() // Should not 403, just hide widgets
+            ->assertDontSeeLivewire(FinanceKpiWidget::class)
+            ->assertDontSeeLivewire(FinanceRevenueChart::class);
 
         // With permission
         $this->actingAs($userWithPermission)
-             ->get('/dashboard')
-             ->assertSuccessful()
-             ->assertSeeLivewire('app.filament.widgets.finance-kpi-widget'); // Filament uses lower case dot notation
+            ->get('/dashboard')
+            ->assertSuccessful()
+            ->assertSeeLivewire(FinanceKpiWidget::class);
     }
 
     public function test_kas_masuk_only_counts_verified_commercial_payments()
@@ -101,8 +101,8 @@ class Phase32FinanceTest extends TestCase
         ]);
 
         $this->actingAs($user)
-             ->get('/dashboard')
-             ->assertSee('Rp 500.000'); // Should only sum the verified commercial one
+            ->get('/dashboard')
+            ->assertSee('Rp 500.000'); // Should only sum the verified commercial one
     }
 
     public function test_outstanding_does_not_count_draft_and_cancelled()
@@ -145,7 +145,7 @@ class Phase32FinanceTest extends TestCase
         ]);
 
         $this->actingAs($user)
-             ->get('/dashboard')
-             ->assertSee('Rp 1.000.000');
+            ->get('/dashboard')
+            ->assertSee('Rp 1.000.000');
     }
 }

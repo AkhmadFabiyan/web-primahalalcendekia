@@ -2,19 +2,24 @@
 
 namespace App\Modules\Payments\Events;
 
+use App\Modules\Projects\Models\Project;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use App\Modules\Projects\Models\Project;
 
 class ActivationBillingGroupPaid
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public string $projectId;
+
     public string $billingGroupId;
+
     public string $paymentId;
+
     public string $verifiedByUserId;
+
+    public Project $project;
 
     /**
      * Create a new event instance.
@@ -25,5 +30,6 @@ class ActivationBillingGroupPaid
         $this->billingGroupId = $billingGroupId;
         $this->paymentId = $paymentId;
         $this->verifiedByUserId = $verifiedByUserId;
+        $this->project = Project::findOrFail($projectId);
     }
 }

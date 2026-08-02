@@ -2,14 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Enums\Permission;
 use App\Enums\Role;
+use App\Filament\Pages\SystemPreference;
 use App\Models\User;
 use App\Settings\CompanySettings;
 use App\Settings\GeneralSettings;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -20,8 +19,8 @@ class SystemSettingsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
-        $this->seed(\Database\Seeders\RolePermissionSeeder::class);
+
+        $this->seed(RolePermissionSeeder::class);
     }
 
     public function test_super_admin_can_access_settings_page()
@@ -31,7 +30,7 @@ class SystemSettingsTest extends TestCase
 
         $this->actingAs($superAdmin);
 
-        $this->get('/admin/system-preference')->assertSuccessful();
+        $this->get('/dashboard/system-preference')->assertSuccessful();
     }
 
     public function test_non_admin_cannot_access_settings_page()
@@ -41,7 +40,7 @@ class SystemSettingsTest extends TestCase
 
         $this->actingAs($user);
 
-        $this->get('/admin/system-preference')->assertForbidden();
+        $this->get('/dashboard/system-preference')->assertRedirect('/dashboard');
     }
 
     public function test_super_admin_can_update_settings()
@@ -51,7 +50,7 @@ class SystemSettingsTest extends TestCase
 
         $this->actingAs($superAdmin);
 
-        Livewire::test(\App\Filament\Pages\SystemPreference::class)
+        Livewire::test(SystemPreference::class)
             ->fillForm([
                 'general.display_timezone' => 'Asia/Makassar',
                 'general.locale' => 'en',

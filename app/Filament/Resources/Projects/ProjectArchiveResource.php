@@ -2,16 +2,16 @@
 
 namespace App\Filament\Resources\Projects;
 
+use App\Enums\Role;
 use App\Filament\Resources\Projects\ProjectArchiveResource\Pages;
 use App\Modules\Projects\Enums\ArchiveVisibility;
 use App\Modules\Projects\Models\ProjectArchive;
-use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\Section;
+use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,9 +21,13 @@ class ProjectArchiveResource extends Resource
     protected static ?string $model = ProjectArchive::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-archive-box';
+
     protected static \UnitEnum|string|null $navigationGroup = 'Arsip & Laporan';
+
     protected static ?string $modelLabel = 'Arsip Project';
+
     protected static ?string $pluralModelLabel = 'Arsip Project';
+
     protected static ?int $navigationSort = 1;
 
     public static function getEloquentQuery(): Builder
@@ -32,11 +36,11 @@ class ProjectArchiveResource extends Resource
             ->whereNull('invalidated_at') // only show active archives
             ->with(['project.client']);
 
-        if (auth()->user()->isKlien()) {
+        if (auth()->user()->isClient()) {
             $query->whereHas('project', function ($q) {
                 $q->where('client_id', auth()->user()->client_id);
             });
-        } elseif (auth()->user()->isAdminPerusahaan()) {
+        } elseif (auth()->user()->hasRole(Role::ADMIN_PERUSAHAAN->value)) {
             $query->whereHas('project', function ($q) {
                 // Assuming admin perusahaan also bounded to client_id or handled by policy
                 $q->where('client_id', auth()->user()->client_id);
@@ -80,7 +84,7 @@ class ProjectArchiveResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([])
             ->persistFiltersInSession()
@@ -89,7 +93,7 @@ class ProjectArchiveResource extends Resource
             ->persistSortInSession();
     }
 
-    public static function infolist(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    public static function infolist(Schema $schema): Schema
     {
         return $schema
             ->schema([
@@ -116,15 +120,16 @@ class ProjectArchiveResource extends Resource
                                 ->getStateUsing(function () use ($docs) {
                                     $list = [];
                                     foreach ($docs as $doc) {
-                                        $list[] = $doc->document_name . ($doc->document_version ? ' (' . $doc->document_version . ')' : '');
+                                        $list[] = $doc->document_name.($doc->document_version ? ' ('.$doc->document_version.')' : '');
                                     }
+
                                     return implode(', ', $list);
                                 });
                         }
 
                         return $components;
-                    })->columnSpan(2)
-                ])
+                    })->columnSpan(2),
+                ]),
             ]);
     }
 
@@ -136,4 +141,3 @@ class ProjectArchiveResource extends Resource
         ];
     }
 }
-

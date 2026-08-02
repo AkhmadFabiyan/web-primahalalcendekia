@@ -2,43 +2,51 @@
 
 namespace App\Filament\Resources\Leads;
 
-use App\Modules\Leads\Models\Lead;
-use Filament\Schemas\Schema;
-use Filament\Resources\Resource;
-use Filament\Tables\Table;
-use App\Filament\Resources\Leads\Pages;
+use App\Enums\Role;
 use App\Filament\Resources\Leads\Schemas\LeadForm;
 use App\Filament\Resources\Leads\Tables\LeadsTable;
+use App\Filament\Support\RoleNavigation;
+use App\Modules\Leads\Models\Lead;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class LeadResource extends Resource
 {
     protected static ?string $model = Lead::class;
+
     protected static bool $isGloballySearchable = true;
+
     protected static ?string $recordTitleAttribute = 'company_name';
+
     protected static int $globalSearchResultsLimit = 10;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-users';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Akuisisi';
-
     protected static ?string $modelLabel = 'Lead';
 
     protected static ?string $pluralModelLabel = 'Leads';
-    
+
     protected static ?int $navigationSort = 1;
+
+    public static function getNavigationGroup(): string
+    {
+        return RoleNavigation::forModule('leads');
+    }
 
     public static function getGloballySearchableAttributes(): array
     {
         return ['company_name', 'pic_name', 'pic_email', 'pic_phone', 'partner.name'];
     }
 
-    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultTitle(Model $record): string
     {
         return $record->company_name;
     }
 
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         return [
             'PIC' => $record->pic_name,
@@ -47,7 +55,7 @@ class LeadResource extends Resource
         ];
     }
 
-    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultUrl(Model $record): string
     {
         return LeadResource::getUrl('view', ['record' => $record]);
     }
@@ -94,7 +102,7 @@ class LeadResource extends Resource
 
         $user = auth()->user();
 
-        if ($user && $user->hasRole(\App\Enums\Role::MARKETING->value)) {
+        if ($user && $user->hasRole(Role::MARKETING->value)) {
             $query->ownedByMarketing($user->id);
         }
 

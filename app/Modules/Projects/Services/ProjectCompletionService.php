@@ -2,34 +2,36 @@
 
 namespace App\Modules\Projects\Services;
 
-use App\Modules\Projects\Models\Project;
 use App\Modules\Projects\Enums\ProjectStatus;
-use App\Modules\Payments\Enums\InvoiceStatus;
-use App\Modules\Payments\Enums\PaymentStatus;
+use App\Modules\Projects\Models\Project;
 use Illuminate\Support\Facades\DB;
-use Exception;
 
 class ProjectCompletionService
 {
+    public function __construct(
+        private readonly ProjectClosureReadinessService $readinessService,
+    ) {}
+
     public function checkCompletion(Project $project): void
     {
         DB::transaction(function () use ($project) {
             $project = Project::where('id', $project->id)->lockForUpdate()->first();
 
             // Hanya proses jika statusnya CERTIFICATE_ISSUED atau WAITING_SETTLEMENT
-            if (!in_array($project->status, [ProjectStatus::CERTIFICATE_ISSUED, ProjectStatus::WAITING_SETTLEMENT])) {
+            if (! in_array($project->status, [ProjectStatus::CERTIFICATE_ISSUED, ProjectStatus::WAITING_SETTLEMENT])) {
                 return;
             }
 
             // Gunakan ProjectClosureReadinessService
-            $readiness = ProjectClosureReadinessService::evaluate($project);
-            $isReady = ProjectClosureReadinessService::isReady($readiness);
+            $readiness = $this->readinessService->evaluate($project);
+            $isReady = $this->readinessService->isReady($readiness);
 
-            if (!$isReady) {
+            if (! $isReady) {
                 // Pastikan status menjadi WAITING_SETTLEMENT jika sudah CERTIFICATE_ISSUED dan belum siap
                 if ($project->status === ProjectStatus::CERTIFICATE_ISSUED) {
                     $project->update(['status' => ProjectStatus::WAITING_SETTLEMENT]);
                 }
+
                 return;
             }
 
@@ -55,10 +57,10 @@ class ProjectCompletionService
                     'old' => ['status' => $oldStatus instanceof ProjectStatus ? $oldStatus->value : $oldStatus],
                     'attributes' => ['status' => ProjectStatus::COMPLETED->value],
                     'context' => [
-                        'source' => 'project_completion_service'
-                    ]
+                        'source' => 'project_completion_service',
+                    ],
                 ])
-                ->log("Seluruh kewajiban operasional dan finansial Project telah selesai. Status menjadi Selesai.");
+                ->log('Seluruh kewajiban operasional dan finansial Project telah selesai. Status menjadi Selesai.');
         });
     }
 }

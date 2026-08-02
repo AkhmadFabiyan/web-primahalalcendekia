@@ -4,16 +4,16 @@ namespace App\Filament\Resources\Logs;
 
 use App\Filament\Resources\Logs\ActivityLogResource\Pages;
 use App\Modules\Logs\Models\Activity;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Infolists\Components\KeyValueEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\Grid;
-use Filament\Infolists\Components\ViewEntry;
-use Filament\Infolists\Components\KeyValueEntry;
 use Illuminate\Database\Eloquent\Builder;
 
 class ActivityLogResource extends Resource
@@ -21,9 +21,13 @@ class ActivityLogResource extends Resource
     protected static ?string $model = Activity::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-clipboard-document-list';
+
     protected static \UnitEnum|string|null $navigationGroup = 'Arsip & Laporan';
+
     protected static ?string $modelLabel = 'Activity Log';
+
     protected static ?string $pluralModelLabel = 'Activity Logs';
+
     protected static ?int $navigationSort = 2;
 
     public static function table(Table $table): Table
@@ -100,10 +104,10 @@ class ActivityLogResource extends Resource
                                 $data['created_until'],
                                 fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
                             );
-                    })
+                    }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ])
             ->bulkActions([])
             ->persistFiltersInSession()
@@ -112,7 +116,7 @@ class ActivityLogResource extends Resource
             ->persistSortInSession();
     }
 
-    public static function infolist(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    public static function infolist(Schema $schema): Schema
     {
         return $schema
             ->schema([
@@ -134,26 +138,26 @@ class ActivityLogResource extends Resource
                         $new = $properties->get('attributes', []);
                         $context = $properties->get('context', []);
 
-                        if (!empty($context)) {
+                        if (! empty($context)) {
                             $components[] = KeyValueEntry::make('context_data')
                                 ->label('Konteks')
                                 ->getStateUsing(fn () => $context);
                         }
 
-                        if (!empty($old) || !empty($new)) {
+                        if (! empty($old) || ! empty($new)) {
                             // Find differences
                             $changes = [];
                             $allKeys = array_unique(array_merge(array_keys($old), array_keys($new)));
                             foreach ($allKeys as $key) {
                                 $oldVal = isset($old[$key]) ? (is_array($old[$key]) ? json_encode($old[$key]) : (string) $old[$key]) : '-';
                                 $newVal = isset($new[$key]) ? (is_array($new[$key]) ? json_encode($new[$key]) : (string) $new[$key]) : '-';
-                                
+
                                 if ($oldVal !== $newVal) {
                                     $changes[$key] = "Sebelum: {$oldVal} \nSesudah: {$newVal}";
                                 }
                             }
 
-                            if (!empty($changes)) {
+                            if (! empty($changes)) {
                                 $components[] = KeyValueEntry::make('changes_data')
                                     ->label('Perubahan Data')
                                     ->getStateUsing(fn () => $changes);
@@ -168,8 +172,8 @@ class ActivityLogResource extends Resource
                             ->extraAttributes(['class' => 'whitespace-pre-wrap']);
 
                         return $components;
-                    })->columnSpan(2)
-                ])
+                    })->columnSpan(2),
+                ]),
             ]);
     }
 
@@ -181,4 +185,3 @@ class ActivityLogResource extends Resource
         ];
     }
 }
-

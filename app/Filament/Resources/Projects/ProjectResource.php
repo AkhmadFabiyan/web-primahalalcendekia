@@ -2,21 +2,29 @@
 
 namespace App\Filament\Resources\Projects;
 
-use App\Filament\Resources\Projects\Pages;
+use App\Filament\Resources\ProjectResource\RelationManagers\AssignmentsRelationManager;
+use App\Filament\Support\RoleNavigation;
 use App\Modules\Projects\Models\Project;
-use Filament\Forms\Form;
+use Filament\Actions\Action;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Actions\Action;
+use Filament\Tables\Table;
 
 class ProjectResource extends Resource
 {
     protected static ?string $model = Project::class;
 
+    protected static bool $isGloballySearchable = false;
+
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-folder-open';
-    protected static string|\UnitEnum|null $navigationGroup = 'Operasional';
+
+    public static function getNavigationGroup(): string
+    {
+        return RoleNavigation::forModule('projects');
+    }
+
     protected static ?string $modelLabel = 'Project';
+
     protected static ?string $pluralModelLabel = 'Projects';
 
     public static function table(Table $table): Table
@@ -75,7 +83,7 @@ class ProjectResource extends Resource
     public static function getRelations(): array
     {
         return [
-            \App\Filament\Resources\ProjectResource\RelationManagers\AssignmentsRelationManager::class,
+            AssignmentsRelationManager::class,
         ];
     }
 
@@ -86,4 +94,3 @@ class ProjectResource extends Resource
         ];
     }
 }
-

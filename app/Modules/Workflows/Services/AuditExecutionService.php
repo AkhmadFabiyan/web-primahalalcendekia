@@ -21,8 +21,9 @@ use App\Modules\Workflows\Models\WorkflowHistory;
 use App\Modules\Workflows\Models\WorkflowReview;
 use App\Modules\Workflows\Models\WorkflowStep;
 use Exception;
-use Illuminate\Support\Facades\DB;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AuditExecutionService
 {
@@ -38,23 +39,23 @@ class AuditExecutionService
                 ->firstOrFail();
 
             if ($task->task_type !== TaskType::AUDIT_EXECUTION) {
-                throw new Exception("Tugas bukan eksekusi audit.");
+                throw new Exception('Tugas bukan eksekusi audit.');
             }
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak memiliki akses untuk tugas ini.");
+                throw new Exception('Anda tidak memiliki akses untuk tugas ini.');
             }
 
             if ($task->status !== TaskStatus::TODO) {
-                throw new Exception("Pelaksanaan audit sudah dimulai.");
+                throw new Exception('Pelaksanaan audit sudah dimulai.');
             }
 
             if ($project->status !== ProjectStatus::ACTIVE && $project->status !== ProjectStatus::OPERATIONAL) {
-                throw new Exception("Project tidak dalam status aktif atau operasional.");
+                throw new Exception('Project tidak dalam status aktif atau operasional.');
             }
 
-            if (!$plan->confirmed_at) {
-                throw new Exception("Rencana audit belum dikonfirmasi.");
+            if (! $plan->confirmed_at) {
+                throw new Exception('Rencana audit belum dikonfirmasi.');
             }
 
             $primaryAuditor = ProjectAssignment::where('project_id', $project->id)
@@ -63,8 +64,8 @@ class AuditExecutionService
                 ->whereNull('ended_at')
                 ->first();
 
-            if (!$primaryAuditor) {
-                throw new Exception("Auditor Utama belum ditentukan atau tidak aktif.");
+            if (! $primaryAuditor) {
+                throw new Exception('Auditor Utama belum ditentukan atau tidak aktif.');
             }
 
             $execution = AuditExecution::firstOrCreate(
@@ -81,10 +82,10 @@ class AuditExecutionService
 
             // Salin checklist jika belum ada
             if (TaskChecklistItem::where('task_id', $task->id)->count() === 0) {
-                $templateCode = $plan->audit_method->value === 'ONLINE' 
-                    ? 'AUDIT_EXECUTION_ONLINE' 
+                $templateCode = $plan->audit_method->value === 'ONLINE'
+                    ? 'AUDIT_EXECUTION_ONLINE'
                     : 'AUDIT_EXECUTION_ONSITE';
-                    
+
                 $template = ChecklistTemplate::where('code', $templateCode)->with('items')->first();
                 if ($template) {
                     foreach ($template->items as $item) {
@@ -128,7 +129,7 @@ class AuditExecutionService
                 ->performedOn($execution)
                 ->causedBy($actor)
                 ->event('started')
-                ->log("Memulai Pelaksanaan Audit");
+                ->log('Memulai Pelaksanaan Audit');
         });
     }
 
@@ -146,8 +147,8 @@ class AuditExecutionService
                 ->whereNull('ended_at')
                 ->first();
 
-            if (!$assignment) {
-                throw new Exception("Anda bukan Pendamping aktif untuk Project ini.");
+            if (! $assignment) {
+                throw new Exception('Anda bukan Pendamping aktif untuk Project ini.');
             }
 
             $allowedStatuses = [
@@ -157,8 +158,8 @@ class AuditExecutionService
                 WorkflowStatus::WAITING_CLIENT_CORRECTION,
             ];
 
-            if (!in_array($status, $allowedStatuses)) {
-                throw new Exception("Status tidak valid untuk tahap ini.");
+            if (! in_array($status, $allowedStatuses)) {
+                throw new Exception('Status tidak valid untuk tahap ini.');
             }
 
             $statusOrder = [
@@ -172,11 +173,11 @@ class AuditExecutionService
                 WorkflowStatus::WAITING_CLIENT_CORRECTION->value => 8,
                 WorkflowStatus::ASSISTANCE_COMPLETED->value => 9,
             ];
-            
+
             $isDowngrade = ($statusOrder[$status->value] ?? 0) < ($statusOrder[$tracker->status->value] ?? 0);
 
             if ($isDowngrade && empty($reason)) {
-                throw new Exception("Alasan wajib diisi saat menurunkan status pendampingan.");
+                throw new Exception('Alasan wajib diisi saat menurunkan status pendampingan.');
             }
 
             $oldStatus = $tracker->status->value;
@@ -200,9 +201,9 @@ class AuditExecutionService
                 ->withProperties([
                     'from' => $oldStatus,
                     'to' => $status->value,
-                    'reason' => $reason
+                    'reason' => $reason,
                 ])
-                ->log("Memperbarui Status Pendamping");
+                ->log('Memperbarui Status Pendamping');
         });
     }
 
@@ -213,23 +214,23 @@ class AuditExecutionService
             $project = Project::where('id', $task->project_id)->firstOrFail();
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak berhak menambah temuan.");
+                throw new Exception('Anda tidak berhak menambah temuan.');
             }
 
-            if (!in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION])) {
-                throw new Exception("Task harus dalam status IN_PROGRESS atau REVISION.");
+            if (! in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION])) {
+                throw new Exception('Task harus dalam status IN_PROGRESS atau REVISION.');
             }
 
             if ($project->status === ProjectStatus::CANCELLED) {
-                throw new Exception("Project telah dibatalkan.");
+                throw new Exception('Project telah dibatalkan.');
             }
 
             if ($execution->submitted_at) {
-                throw new Exception("Hasil audit telah dikunci (submitted).");
+                throw new Exception('Hasil audit telah dikunci (submitted).');
             }
 
             $count = AuditFinding::where('audit_execution_id', $execution->id)->lockForUpdate()->count();
-            $number = 'FIND-' . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+            $number = 'FIND-'.str_pad($count + 1, 3, '0', STR_PAD_LEFT);
 
             return AuditFinding::create([
                 'audit_execution_id' => $execution->id,
@@ -252,11 +253,11 @@ class AuditExecutionService
             $task = Task::where('id', $execution->task_id)->firstOrFail();
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak berhak mengubah temuan.");
+                throw new Exception('Anda tidak berhak mengubah temuan.');
             }
 
             if ($execution->submitted_at) {
-                throw new Exception("Hasil audit telah dikunci.");
+                throw new Exception('Hasil audit telah dikunci.');
             }
 
             $finding->description = $data['description'] ?? $finding->description;
@@ -273,15 +274,15 @@ class AuditExecutionService
             $task = Task::where('id', $execution->task_id)->firstOrFail();
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak berhak membatalkan temuan.");
+                throw new Exception('Anda tidak berhak membatalkan temuan.');
             }
 
             if ($execution->submitted_at) {
-                throw new Exception("Hasil audit telah dikunci.");
+                throw new Exception('Hasil audit telah dikunci.');
             }
 
             if (empty($reason)) {
-                throw new Exception("Alasan pembatalan wajib diisi.");
+                throw new Exception('Alasan pembatalan wajib diisi.');
             }
 
             $finding->status = AuditFindingStatus::VOIDED->value;
@@ -300,11 +301,11 @@ class AuditExecutionService
             $task = Task::where('id', $execution->task_id)->firstOrFail();
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak berhak menambah bukti temuan.");
+                throw new Exception('Anda tidak berhak menambah bukti temuan.');
             }
 
             if ($execution->submitted_at) {
-                throw new Exception("Hasil audit telah dikunci.");
+                throw new Exception('Hasil audit telah dikunci.');
             }
 
             $finding->addMedia($file)
@@ -324,30 +325,30 @@ class AuditExecutionService
                 ->lockForUpdate()
                 ->firstOrFail();
             $auditorTracker = WorkflowStep::where('project_id', $project->id)
-                ->where('step_code', 'AUDITOR_PROGRESS')
+                ->whereIn('step_code', ['AUDITOR_PROGRESS', 'AUDITOR_REVIEW'])
                 ->lockForUpdate()
                 ->firstOrFail();
-            
+
             $execution = AuditExecution::where('task_id', $task->id)->lockForUpdate()->firstOrFail();
 
             if ($task->assigned_to !== $actor->id) {
-                throw new Exception("Anda tidak memiliki akses submit.");
+                throw new Exception('Anda tidak memiliki akses submit.');
             }
 
-            if (!in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION])) {
-                throw new Exception("Tugas belum dalam proses eksekusi.");
+            if (! in_array($task->status, [TaskStatus::IN_PROGRESS, TaskStatus::REVISION])) {
+                throw new Exception('Tugas belum dalam proses eksekusi.');
             }
 
             if ($project->status === ProjectStatus::CANCELLED || $project->status === ProjectStatus::COMPLETED) {
-                throw new Exception("Status Project tidak mengizinkan aksi ini.");
+                throw new Exception('Status Project tidak mengizinkan aksi ini.');
             }
 
             // Cek kelengkapan
             if (empty($data['summary'])) {
-                throw new Exception("Ringkasan audit wajib diisi.");
+                throw new Exception('Ringkasan audit wajib diisi.');
             }
-            if (!isset($data['has_findings'])) {
-                throw new Exception("Pernyataan ketersediaan temuan wajib diisi.");
+            if (! isset($data['has_findings'])) {
+                throw new Exception('Pernyataan ketersediaan temuan wajib diisi.');
             }
 
             $uncompletedChecklists = TaskChecklistItem::where('task_id', $task->id)
@@ -356,7 +357,7 @@ class AuditExecutionService
                 ->exists();
 
             if ($uncompletedChecklists) {
-                throw new Exception("Seluruh checklist pelaksanaan audit wajib diselesaikan.");
+                throw new Exception('Seluruh checklist pelaksanaan audit wajib diselesaikan.');
             }
 
             $findings = AuditFinding::where('audit_execution_id', $execution->id)
@@ -365,7 +366,7 @@ class AuditExecutionService
 
             if ($data['has_findings']) {
                 if ($findings->isEmpty()) {
-                    throw new Exception("Anda menyatakan ada temuan, tetapi tidak ada temuan aktif yang dicatat.");
+                    throw new Exception('Anda menyatakan ada temuan, tetapi tidak ada temuan aktif yang dicatat.');
                 }
             } else {
                 $openFindings = $findings->where('status', AuditFindingStatus::OPEN->value);
@@ -389,8 +390,8 @@ class AuditExecutionService
                 ->whereNull('ended_at')
                 ->first();
 
-            if (!$primaryAuditor) {
-                throw new Exception("Auditor Utama belum ditentukan atau tidak aktif.");
+            if (! $primaryAuditor) {
+                throw new Exception('Auditor Utama belum ditentukan atau tidak aktif.');
             }
 
             $execution->summary = $data['summary'];
@@ -415,7 +416,7 @@ class AuditExecutionService
             $task->status = TaskStatus::WAITING_REVIEW;
             $task->save();
 
-            app(\App\Modules\Workflows\Services\SlaManagerService::class)->completeCycle($task);
+            app(SlaManagerService::class)->completeCycle($task);
 
             $auditorTaskKey = "PROJECT-{$project->id}:AUDITOR_REVIEW:{$history->id}";
             $auditorTask = Task::firstOrCreate(
@@ -433,10 +434,10 @@ class AuditExecutionService
                 ]
             );
 
-            app(\App\Modules\Workflows\Services\SlaManagerService::class)->startCycle($auditorTask);
+            app(SlaManagerService::class)->startCycle($auditorTask);
 
-            \App\Modules\Workflows\Models\WorkflowReview::create([
-                'id' => \Illuminate\Support\Str::uuid(),
+            WorkflowReview::create([
+                'id' => Str::uuid(),
                 'project_id' => $project->id,
                 'workflow_step_id' => $auditorTracker->id,
                 'submission_history_id' => $history->id,
@@ -467,7 +468,7 @@ class AuditExecutionService
                 ->performedOn($execution)
                 ->causedBy($actor)
                 ->event('submitted')
-                ->log("Menyerahkan hasil pendampingan ke Auditor");
+                ->log('Menyerahkan hasil pendampingan ke Auditor');
         });
 
         foreach ($notifications as $notif) {

@@ -2,13 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\RoleNavigation;
 use App\Modules\Notifications\Enums\NotificationEvent;
 use App\Modules\Notifications\Enums\NotificationPriority;
 use App\Modules\Notifications\Models\DatabaseNotification;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Pages\Page;
 use Filament\Tables;
-use Filament\Actions\Action;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
@@ -23,6 +24,11 @@ class NotificationsPage extends Page implements HasTable
     protected string $view = 'filament.pages.notifications-page';
 
     protected static ?string $navigationLabel = 'Semua Notifikasi';
+
+    public static function getNavigationGroup(): ?string
+    {
+        return RoleNavigation::forModule('tasks');
+    }
 
     protected static ?string $title = 'Notifikasi Anda';
 
@@ -123,7 +129,7 @@ class NotificationsPage extends Page implements HasTable
                                 $data['created_until'],
                                 fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
                             );
-                    })
+                    }),
             ])
             ->actions([
                 Action::make('mark_as_read')

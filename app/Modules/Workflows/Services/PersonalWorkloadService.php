@@ -3,10 +3,10 @@
 namespace App\Modules\Workflows\Services;
 
 use App\Models\User;
-use App\Modules\Workflows\Models\Task;
 use App\Modules\Workflows\Enums\TaskStatus;
-use Illuminate\Support\Facades\Cache;
+use App\Modules\Workflows\Models\Task;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class PersonalWorkloadService
 {
@@ -18,7 +18,7 @@ class PersonalWorkloadService
         return Cache::remember("dashboard:personal:{$user->id}:active_tasks_count", 60, function () use ($user) {
             return Task::query()
                 ->where('assigned_to', $user->id)
-                ->whereNull('ended_at')
+                ->whereNull('completed_at')
                 ->whereNotIn('status', [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value])
                 ->count();
         });
@@ -32,10 +32,10 @@ class PersonalWorkloadService
         return Cache::remember("dashboard:personal:{$user->id}:overdue_tasks_count", 60, function () use ($user) {
             return Task::query()
                 ->where('assigned_to', $user->id)
-                ->whereNull('ended_at')
+                ->whereNull('completed_at')
                 ->whereNotIn('status', [TaskStatus::COMPLETED->value, TaskStatus::CANCELLED->value])
-                ->whereNotNull('due_date')
-                ->where('due_date', '<', Carbon::now())
+                ->whereNotNull('deadline')
+                ->where('deadline', '<', Carbon::now())
                 ->count();
         });
     }

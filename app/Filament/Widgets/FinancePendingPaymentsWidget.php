@@ -2,23 +2,26 @@
 
 namespace App\Filament\Widgets;
 
+use App\Modules\Dashboards\DataTransferObjects\FinanceDashboardFilterData;
+use App\Modules\Dashboards\Services\FinanceDashboardService;
+use Filament\Actions\Action;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Widgets\TableWidget as BaseWidget;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
-use App\Modules\Dashboards\Services\FinanceDashboardService;
-use App\Modules\Dashboards\DataTransferObjects\FinanceDashboardFilterData;
+use Filament\Widgets\TableWidget as BaseWidget;
 
 class FinancePendingPaymentsWidget extends BaseWidget
 {
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 13;
-    protected int | string | array $columnSpan = 'full';
-    
+
+    protected int|string|array $columnSpan = 'full';
+
     public static function canView(): bool
     {
         $user = auth()->user();
+
         return $user && $user->can('dashboard.finance.view');
     }
 
@@ -26,7 +29,7 @@ class FinancePendingPaymentsWidget extends BaseWidget
     {
         $filterData = FinanceDashboardFilterData::fromArray($this->filters);
         $service = new FinanceDashboardService($filterData);
-        
+
         return $table
             ->query($service->getPendingPaymentsQuery())
             ->heading('Pembayaran Menunggu Verifikasi (PENDING)')
@@ -49,9 +52,9 @@ class FinancePendingPaymentsWidget extends BaseWidget
                     ->badge(),
             ])
             ->actions([
-                Tables\Actions\Action::make('review')
+                Action::make('review')
                     ->label('Review Pembayaran')
-                    ->url(fn ($record) => '/dashboard/payments/' . $record->id) // Assuming resource route is /dashboard/payments
+                    ->url(fn ($record) => '/dashboard/payments/'.$record->id) // Assuming resource route is /dashboard/payments
                     ->icon('heroicon-m-eye'),
             ])
             ->paginated([5, 10, 25])

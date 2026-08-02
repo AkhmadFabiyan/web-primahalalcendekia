@@ -2,43 +2,57 @@
 
 namespace App\Filament\Resources\Payments;
 
-use App\Filament\Resources\Payments\Pages;
+use App\Enums\Role;
 use App\Filament\Resources\Payments\Infolists\InvoiceWorkspaceInfolist;
-use App\Modules\Payments\Models\Invoice;
+use App\Filament\Support\RoleNavigation;
+use App\Modules\Payments\Enums\InvoiceAudience;
 use App\Modules\Payments\Enums\InvoiceStatus;
+use App\Modules\Payments\Enums\PaymentStatus;
+use App\Modules\Payments\Models\Invoice;
 use App\Modules\Payments\Services\InvoiceActionService;
+use App\Modules\Payments\Services\InvoicePdfService;
 use App\Modules\Payments\Services\PaymentService;
-use Filament\Forms\Form;
+use Filament\Actions\Action;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Get;
-use Filament\Resources\Resource;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Actions\Action;
-use Filament\Tables\Actions\EditAction;
-use Filament\Tables\Actions\ViewAction;
 use Filament\Notifications\Notification;
-use Filament\Support\Enums\MaxWidth;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class InvoiceResource extends Resource
 {
     protected static ?string $model = Invoice::class;
+
     protected static bool $isGloballySearchable = true;
+
     protected static ?string $recordTitleAttribute = 'invoice_number';
+
     protected static int $globalSearchResultsLimit = 10;
-    
+
     // Custom slug as requested in ui/invoice.md
     protected static ?string $slug = 'payments/invoices';
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-currency-dollar';
-    protected static string|\UnitEnum|null $navigationGroup = 'Pembayaran';
+
+    public static function getNavigationGroup(): string
+    {
+        return RoleNavigation::forModule('finance');
+    }
+
     protected static ?string $modelLabel = 'Invoice';
+
     protected static ?string $pluralModelLabel = 'Invoices';
 
     // Disable creating manually
@@ -52,21 +66,21 @@ class InvoiceResource extends Resource
         return ['invoice_number', 'project.client.business_id', 'project.client.company_name', 'billing_group_id'];
     }
 
-    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultTitle(Model $record): string
     {
         return $record->invoice_number ?? 'Draft Invoice';
     }
 
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         return [
             'Client' => $record->project?->client?->company_name ?? '-',
-            'Total' => 'Rp ' . number_format($record->total, 2, ',', '.'),
+            'Total' => 'Rp '.number_format($record->total, 2, ',', '.'),
             'Status' => $record->status?->value ?? '-',
         ];
     }
 
-    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultUrl(Model $record): string
     {
         return InvoiceResource::getUrl('index'); // We don't have a view page for invoice yet, maybe just manage page
     }
@@ -76,16 +90,16 @@ class InvoiceResource extends Resource
         $query = parent::getGlobalSearchEloquentQuery()->with(['project.client']);
 
         $user = auth()->user();
-        if ($user && $user->hasRole(\App\Enums\Role::KLIEN->value) && $user->client_id) {
+        if ($user && $user->hasRole(Role::KLIEN->value) && $user->client_id) {
             $query->whereHas('project', function ($q) use ($user) {
                 $q->where('client_id', $user->client_id);
-            })->where('audience', \App\Modules\Payments\Enums\InvoiceAudience::CLIENT);
+            })->where('audience', InvoiceAudience::CLIENT);
         }
 
         return $query;
     }
 
-    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    public static function form(Schema $schema): Schema
     {
         return $schema
             ->schema([
@@ -102,7 +116,7 @@ class InvoiceResource extends Resource
             ]);
     }
 
-    public static function infolist(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    public static function infolist(Schema $schema): Schema
     {
         return $schema
             ->schema(InvoiceWorkspaceInfolist::schema());
@@ -148,27 +162,27 @@ class InvoiceResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\Action::make('downloadPdf')
+                Action::make('downloadPdf')
                     ->label('Unduh PDF')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
                     ->action(function (Invoice $record) {
-                        $pdfService = app(\App\Modules\Payments\Services\InvoicePdfService::class);
+                        $pdfService = app(InvoicePdfService::class);
                         $path = $pdfService->generate($record);
-                        
+
                         activity()
                             ->causedBy(auth()->user())
                             ->performedOn($record)
                             ->event('downloaded')
                             ->log('INVOICE_PDF_ISSUED');
 
-                        return response()->download(storage_path('app/private/' . $path));
+                        return response()->download(storage_path('app/private/'.$path));
                     }),
                 ViewAction::make()->slideOver(),
                 EditAction::make()
-                    ->modalWidth(MaxWidth::Medium)
+                    ->modalWidth(Width::Medium)
                     ->visible(fn (Invoice $record): bool => $record->status === InvoiceStatus::DRAFT),
-                
+
                 Action::make('publish')
                     ->label('Terbitkan')
                     ->icon('heroicon-o-paper-airplane')
@@ -205,7 +219,7 @@ class InvoiceResource extends Resource
                     ->form([
                         Textarea::make('reason')
                             ->label('Alasan Pembatalan')
-                            ->required()
+                            ->required(),
                     ])
                     ->visible(fn (Invoice $record): bool => in_array($record->status, [InvoiceStatus::DRAFT, InvoiceStatus::PUBLISHED]))
                     ->action(function (array $data, Invoice $record) {
@@ -225,7 +239,7 @@ class InvoiceResource extends Resource
                                 ->send();
                         }
                     }),
-                    
+
                 Action::make('print')
                     ->label('Cetak PDF')
                     ->icon('heroicon-o-printer')
@@ -243,15 +257,15 @@ class InvoiceResource extends Resource
                     ->visible(fn (Invoice $record): bool => in_array($record->status, [InvoiceStatus::PUBLISHED, InvoiceStatus::PARTIAL]))
                     ->form(function (Invoice $record) {
                         $verifiedAndPending = $record->payments()
-                            ->whereIn('status', [\App\Modules\Payments\Enums\PaymentStatus::VERIFIED, \App\Modules\Payments\Enums\PaymentStatus::PENDING])
+                            ->whereIn('status', [PaymentStatus::VERIFIED, PaymentStatus::PENDING])
                             ->sum('amount');
                         $availableBalance = $record->total - $verifiedAndPending;
-                        
+
                         return [
                             Placeholder::make('invoice_info')
                                 ->label('Informasi Tagihan')
-                                ->content("Total: Rp " . number_format($record->total, 2, ',', '.') . 
-                                          " | Belum Terbayar/Sedang Diproses: Rp " . number_format($availableBalance, 2, ',', '.')),
+                                ->content('Total: Rp '.number_format($record->total, 2, ',', '.').
+                                          ' | Belum Terbayar/Sedang Diproses: Rp '.number_format($availableBalance, 2, ',', '.')),
                             TextInput::make('amount')
                                 ->label('Nominal Pembayaran')
                                 ->required()
@@ -291,15 +305,15 @@ class InvoiceResource extends Resource
                     ->action(function (array $data, Invoice $record) {
                         try {
                             $service = app(PaymentService::class);
-                            
+
                             $proofFile = null;
                             if (isset($data['proof'])) {
                                 // Since FileUpload stores it in temp directory before we move it
                                 // For Spatie Media Library, we get the file path.
                                 // Filament FileUpload component returns file path relative to disk or an array
                                 // With simple setup, it's string (path). We should pass the path to service.
-                                $proofFile = storage_path('app/public/' . $data['proof']); 
-                                // Actually Filament temp files might be different, 
+                                $proofFile = storage_path('app/public/'.$data['proof']);
+                                // Actually Filament temp files might be different,
                                 // Wait, Filament uses temporary upload. Usually it's handled by Filament automatically,
                                 // but when creating manually, we might need to be careful.
                                 // It's better to let Spatie Media plugin handle it if we use Filament's Spatie plugin,

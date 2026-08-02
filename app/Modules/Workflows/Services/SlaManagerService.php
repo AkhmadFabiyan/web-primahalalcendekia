@@ -3,8 +3,8 @@
 namespace App\Modules\Workflows\Services;
 
 use App\Modules\Workflows\Enums\SlaCycleStatus;
-use App\Modules\Workflows\Enums\SlaDurationUnit;
 use App\Modules\Workflows\Enums\SlaEventType;
+use App\Modules\Workflows\Enums\TaskType;
 use App\Modules\Workflows\Models\SlaPolicy;
 use App\Modules\Workflows\Models\Task;
 use App\Modules\Workflows\Models\TaskSlaCycle;
@@ -21,8 +21,10 @@ class SlaManagerService
         $this->calendarService = $calendarService;
     }
 
-    public function getActivePolicy(string $taskType): ?array
+    public function getActivePolicy(TaskType|string $taskType): ?array
     {
+        $taskType = $taskType instanceof TaskType ? $taskType->value : $taskType;
+
         $policy = SlaPolicy::where('task_type', $taskType)
             ->where('is_active', true)
             ->first();
@@ -43,7 +45,7 @@ class SlaManagerService
     public function startCycle(Task $task): void
     {
         // SLA only starts if task has assignee and entered_at
-        if (!$task->assigned_to || !$task->entered_at) {
+        if (! $task->assigned_to || ! $task->entered_at) {
             return;
         }
 
@@ -54,7 +56,7 @@ class SlaManagerService
         }
 
         $policy = $this->getActivePolicy($task->task_type);
-        if (!$policy) {
+        if (! $policy) {
             return; // No SLA for this task type
         }
 
@@ -88,18 +90,18 @@ class SlaManagerService
     public function completeCycle(Task $task): void
     {
         $cycle = $task->slaCycles()->where('status', SlaCycleStatus::ACTIVE->value)->first();
-        if (!$cycle) {
+        if (! $cycle) {
             return;
         }
 
         $now = now();
-        
+
         // If it was breached, it stays breached but completed.
         // If it's active and not passed due_at, it's MET.
         $status = SlaCycleStatus::MET->value;
         if ($cycle->due_at && $now->greaterThan($cycle->due_at)) {
             $status = SlaCycleStatus::BREACHED->value;
-            if (!$cycle->breached_at) {
+            if (! $cycle->breached_at) {
                 $cycle->breached_at = $cycle->due_at; // assuming it breached at due date
             }
         } elseif ($cycle->breached_at) {
@@ -131,8 +133,8 @@ class SlaManagerService
     public function pauseCycle(Task $task, string $reason, string $actorId): void
     {
         $cycle = $task->slaCycles()->where('status', SlaCycleStatus::ACTIVE->value)->first();
-        if (!$cycle) {
-            throw new Exception("SLA is not active.");
+        if (! $cycle) {
+            throw new Exception('SLA is not active.');
         }
 
         $now = now();
@@ -146,7 +148,7 @@ class SlaManagerService
             'event_type' => SlaEventType::PAUSED->value,
             'occurred_at' => $now,
             'recipient_id' => $actorId, // storing actor in recipient_id or metadata
-            'deduplication_key' => "PAUSED_$cycle->id" . "_" . $now->timestamp,
+            'deduplication_key' => "PAUSED_$cycle->id".'_'.$now->timestamp,
             'metadata' => ['reason' => $reason, 'actor_id' => $actorId],
         ]);
     }
@@ -154,8 +156,8 @@ class SlaManagerService
     public function resumeCycle(Task $task, string $reason, string $actorId): void
     {
         $cycle = $task->slaCycles()->where('status', SlaCycleStatus::PAUSED->value)->first();
-        if (!$cycle) {
-            throw new Exception("SLA is not paused.");
+        if (! $cycle) {
+            throw new Exception('SLA is not paused.');
         }
 
         $now = now();
@@ -183,7 +185,7 @@ class SlaManagerService
             'task_sla_cycle_id' => $cycle->id,
             'event_type' => SlaEventType::RESUMED->value,
             'occurred_at' => $now,
-            'deduplication_key' => "RESUMED_$cycle->id" . "_" . $now->timestamp,
+            'deduplication_key' => "RESUMED_$cycle->id".'_'.$now->timestamp,
             'metadata' => ['reason' => $reason, 'actor_id' => $actorId, 'paused_minutes' => $pausedMinutes],
         ]);
 
@@ -196,8 +198,8 @@ class SlaManagerService
     public function adjustDeadline(Task $task, Carbon $newDeadline, string $reason, string $actorId): void
     {
         $cycle = $task->slaCycles()->whereIn('status', [SlaCycleStatus::ACTIVE->value, SlaCycleStatus::PAUSED->value])->first();
-        if (!$cycle) {
-            throw new Exception("SLA Cycle is not active.");
+        if (! $cycle) {
+            throw new Exception('SLA Cycle is not active.');
         }
 
         $oldDeadline = $cycle->due_at;
@@ -207,7 +209,7 @@ class SlaManagerService
             'task_sla_cycle_id' => $cycle->id,
             'event_type' => SlaEventType::DEADLINE_ADJUSTED->value,
             'occurred_at' => now(),
-            'deduplication_key' => "ADJUST_$cycle->id" . "_" . now()->timestamp,
+            'deduplication_key' => "ADJUST_$cycle->id".'_'.now()->timestamp,
             'metadata' => [
                 'reason' => $reason,
                 'actor_id' => $actorId,

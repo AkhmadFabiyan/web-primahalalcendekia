@@ -2,26 +2,22 @@
 
 namespace App\Filament\Resources\Clients\RelationManagers;
 
-use App\Modules\Documents\Enums\DocumentRecordStatus;
 use App\Modules\Documents\Models\Document;
 use App\Modules\Documents\Models\ProjectDocumentRequirement;
 use App\Modules\Documents\Services\DocumentService;
+use Filament\Actions\Action;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-
-use Filament\Schemas\Schema;
 
 class DocumentsRelationManager extends RelationManager
 {
     protected static string $relationship = 'projectDocumentRequirements';
-    
+
     protected static ?string $title = 'Dokumen Persyaratan';
 
     protected static ?string $modelLabel = 'Dokumen';
@@ -46,17 +42,18 @@ class DocumentsRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('documentType.name')
                     ->label('Jenis Dokumen'),
-                
+
                 Tables\Columns\IconColumn::make('is_required')
                     ->label('Wajib')
                     ->boolean(),
-                
+
                 Tables\Columns\TextColumn::make('status_dokumen')
                     ->label('Status')
                     ->state(function (ProjectDocumentRequirement $record) {
-                        if ($record->revision_requested_at && !$record->revision_resolved_at) {
+                        if ($record->revision_requested_at && ! $record->revision_resolved_at) {
                             return 'Revisi Diminta';
                         }
+
                         return $record->latestDocument ? 'Diunggah' : 'Belum Ada';
                     })
                     ->badge()
@@ -65,7 +62,7 @@ class DocumentsRelationManager extends RelationManager
                         'Revisi Diminta' => 'danger',
                         'Belum Ada' => 'gray',
                     }),
-                
+
                 Tables\Columns\TextColumn::make('revision_reason')
                     ->label('Catatan Revisi')
                     ->wrap()
@@ -78,9 +75,10 @@ class DocumentsRelationManager extends RelationManager
                 // No generic create. We use specific actions per row.
             ])
             ->actions([
-                Tables\Actions\Action::make('upload')
+                Action::make('upload')
                     ->label(fn (ProjectDocumentRequirement $record) => $record->latestDocument ? 'Ganti (Replace)' : 'Unggah')
                     ->icon('heroicon-o-arrow-up-tray')
+                    ->visible(fn (ProjectDocumentRequirement $record): bool => Auth::user()->can('upload', [Document::class, $record->project]))
                     ->form([
                         Forms\Components\FileUpload::make('file')
                             ->label('File')
@@ -95,28 +93,28 @@ class DocumentsRelationManager extends RelationManager
                         $service = app(DocumentService::class);
                         try {
                             // File upload component returns array or path, we pass path
-                            $filePath = storage_path('app/public/' . $data['file']); // In filament 3, it saves to public by default temporarily or to defined disk.
-                            
+                            $filePath = storage_path('app/public/'.$data['file']); // In filament 3, it saves to public by default temporarily or to defined disk.
+
                             if ($record->latestDocument) {
                                 $service->replaceDocument(
-                                    $record->project, 
-                                    $record->document_type_id, 
-                                    $filePath, 
-                                    Auth::user(), 
+                                    $record->project,
+                                    $record->document_type_id,
+                                    $filePath,
+                                    Auth::user(),
                                     $data['is_client_visible']
                                 );
                             } else {
                                 $service->uploadDocument(
-                                    $record->project, 
-                                    $record->document_type_id, 
-                                    $filePath, 
-                                    Auth::user(), 
+                                    $record->project,
+                                    $record->document_type_id,
+                                    $filePath,
+                                    Auth::user(),
                                     $data['is_client_visible']
                                 );
                             }
 
                             // If there was an open revision, resolve it
-                            if ($record->revision_requested_at && !$record->revision_resolved_at) {
+                            if ($record->revision_requested_at && ! $record->revision_resolved_at) {
                                 $service->resolveRevision($record, Auth::user());
                             }
 
@@ -132,8 +130,8 @@ class DocumentsRelationManager extends RelationManager
                                 ->send();
                         }
                     }),
-                
-                Tables\Actions\Action::make('request_revision')
+
+                Action::make('request_revision')
                     ->label('Minta Revisi')
                     ->icon('heroicon-o-exclamation-circle')
                     ->color('warning')
@@ -142,7 +140,10 @@ class DocumentsRelationManager extends RelationManager
                             ->label('Alasan Revisi')
                             ->required(),
                     ])
-                    ->visible(fn (ProjectDocumentRequirement $record) => $record->latestDocument && (!$record->revision_requested_at || $record->revision_resolved_at))
+                    ->visible(fn (ProjectDocumentRequirement $record): bool => Auth::user()->can('upload', [Document::class, $record->project])
+                        && $record->latestDocument
+                        && (! $record->revision_requested_at || $record->revision_resolved_at)
+                    )
                     ->action(function (array $data, ProjectDocumentRequirement $record) {
                         app(DocumentService::class)->requestRevision($record, $data['reason'], Auth::user());
                         Notification::make()
@@ -150,12 +151,14 @@ class DocumentsRelationManager extends RelationManager
                             ->success()
                             ->send();
                     }),
-                
-                Tables\Actions\Action::make('download')
+
+                Action::make('download')
                     ->label('Unduh')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
-                    ->visible(fn (ProjectDocumentRequirement $record) => $record->latestDocument !== null)
+                    ->visible(fn (ProjectDocumentRequirement $record): bool => $record->latestDocument !== null
+                        && Auth::user()->can('view', $record->latestDocument)
+                    )
                     ->url(fn (ProjectDocumentRequirement $record) => route('documents.download', $record->latestDocument))
                     ->openUrlInNewTab(),
             ])

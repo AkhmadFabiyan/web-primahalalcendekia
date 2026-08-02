@@ -29,7 +29,7 @@ class ManagementReportFilterData
     protected function applyPreset()
     {
         $now = Carbon::now();
-        
+
         switch ($this->preset) {
             case 'this_month':
                 $this->start_date = $now->copy()->startOfMonth()->toDateString();
@@ -53,18 +53,20 @@ class ManagementReportFilterData
                 break;
             case 'custom':
             default:
-                if (!$this->start_date) {
+                if (! $this->start_date) {
                     $this->start_date = $now->copy()->startOfMonth()->toDateString();
                 }
-                if (!$this->end_date) {
+                if (! $this->end_date) {
                     $this->end_date = $now->copy()->endOfMonth()->toDateString();
                 }
                 break;
         }
     }
 
-    public static function fromArray(array $data): self
+    public static function fromArray(?array $data = null): self
     {
+        $data ??= [];
+
         return new self(
             preset: $data['preset'] ?? 'this_month',
             start_date: $data['start_date'] ?? null,
@@ -83,7 +85,7 @@ class ManagementReportFilterData
             status_workflow: $data['status_workflow'] ?? null,
         );
     }
-    
+
     public function getCacheHash(): string
     {
         return md5(json_encode([

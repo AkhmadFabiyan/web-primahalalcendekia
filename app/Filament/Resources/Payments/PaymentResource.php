@@ -2,37 +2,46 @@
 
 namespace App\Filament\Resources\Payments;
 
-use App\Filament\Resources\Payments\Pages;
-use App\Modules\Payments\Models\Payment;
+use App\Enums\Role;
+use App\Filament\Support\RoleNavigation;
 use App\Modules\Payments\Enums\PaymentStatus;
+use App\Modules\Payments\Models\Payment;
 use App\Modules\Payments\Services\PaymentService;
-use Filament\Forms\Form;
+use App\Modules\Payments\Services\ReceiptPdfService;
+use Filament\Actions\Action;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Textarea;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
+use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Actions\Action;
-use Filament\Tables\Actions\ViewAction;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Filament\Notifications\Notification;
-use Filament\Infolists\Infolist;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\Tabs;
-use Filament\Infolists\Components\Section;
 
 class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
+
     protected static bool $isGloballySearchable = true;
+
     protected static ?string $recordTitleAttribute = 'payment_number';
+
     protected static int $globalSearchResultsLimit = 10;
 
     protected static ?string $slug = 'payments/transactions';
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-banknotes';
-    protected static string|\UnitEnum|null $navigationGroup = 'Pembayaran';
+
+    public static function getNavigationGroup(): string
+    {
+        return RoleNavigation::forModule('finance');
+    }
+
     protected static ?string $modelLabel = 'Payment';
+
     protected static ?string $pluralModelLabel = 'Payments';
 
     public static function canCreate(): bool
@@ -50,21 +59,21 @@ class PaymentResource extends Resource
         return ['payment_number', 'reference_number', 'invoice.invoice_number', 'invoice.project.client.business_id'];
     }
 
-    public static function getGlobalSearchResultTitle(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultTitle(Model $record): string
     {
         return $record->payment_number ?? 'Pembayaran';
     }
 
-    public static function getGlobalSearchResultDetails(\Illuminate\Database\Eloquent\Model $record): array
+    public static function getGlobalSearchResultDetails(Model $record): array
     {
         return [
             'Invoice' => $record->invoice?->invoice_number ?? '-',
-            'Nominal' => 'Rp ' . number_format($record->amount, 2, ',', '.'),
+            'Nominal' => 'Rp '.number_format($record->amount, 2, ',', '.'),
             'Status' => $record->status?->value ?? '-',
         ];
     }
 
-    public static function getGlobalSearchResultUrl(\Illuminate\Database\Eloquent\Model $record): string
+    public static function getGlobalSearchResultUrl(Model $record): string
     {
         return PaymentResource::getUrl('index'); // We don't have a view page for payment
     }
@@ -74,7 +83,7 @@ class PaymentResource extends Resource
         $query = parent::getGlobalSearchEloquentQuery()->with(['invoice.project.client']);
 
         $user = auth()->user();
-        if ($user && $user->hasRole(\App\Enums\Role::KLIEN->value) && $user->client_id) {
+        if ($user && $user->hasRole(Role::KLIEN->value) && $user->client_id) {
             $query->whereHas('invoice.project', function ($q) use ($user) {
                 $q->where('client_id', $user->client_id);
             });
@@ -83,15 +92,15 @@ class PaymentResource extends Resource
         return $query;
     }
 
-    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    public static function form(Schema $schema): Schema
     {
         return $schema
             ->schema([
                 //
             ]);
     }
-    
-    public static function infolist(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+
+    public static function infolist(Schema $schema): Schema
     {
         return $schema
             ->schema([
@@ -113,9 +122,12 @@ class PaymentResource extends Resource
                                     ->label('Preview Bukti')
                                     ->formatStateUsing(function (Payment $record) {
                                         $media = $record->getFirstMedia('payment-proofs');
-                                        if (!$media) return 'Tidak ada bukti';
-                                        
+                                        if (! $media) {
+                                            return 'Tidak ada bukti';
+                                        }
+
                                         $url = route('payments.proof.download', $record->id);
+
                                         return "<a href='{$url}' target='_blank' style='color:blue;text-decoration:underline;'>Lihat / Unduh File</a>";
                                     })
                                     ->html(),
@@ -133,7 +145,7 @@ class PaymentResource extends Resource
                                 TextEntry::make('verified_at')->label('Diverifikasi')->dateTime(),
                                 TextEntry::make('rejected_at')->label('Ditolak')->dateTime(),
                             ]),
-                    ])->columnSpanFull()
+                    ])->columnSpanFull(),
             ]);
     }
 
@@ -174,22 +186,22 @@ class PaymentResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\Action::make('downloadReceipt')
+                Action::make('downloadReceipt')
                     ->label('Unduh Kwitansi')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
-                    ->visible(fn (\App\Modules\Payments\Models\Payment $record) => $record->status === \App\Modules\Payments\Enums\PaymentStatus::VERIFIED && $record->receipt)
-                    ->action(function (\App\Modules\Payments\Models\Payment $record) {
-                        $pdfService = app(\App\Modules\Payments\Services\ReceiptPdfService::class);
+                    ->visible(fn (Payment $record) => $record->status === PaymentStatus::VERIFIED && $record->receipt)
+                    ->action(function (Payment $record) {
+                        $pdfService = app(ReceiptPdfService::class);
                         $path = $pdfService->generate($record->receipt);
-                        
+
                         activity()
                             ->causedBy(auth()->user())
                             ->performedOn($record->receipt)
                             ->event('downloaded')
                             ->log('PAYMENT_RECEIPT_ISSUED');
 
-                        return response()->download(storage_path('app/private/' . $path));
+                        return response()->download(storage_path('app/private/'.$path));
                     }),
                 ViewAction::make()->slideOver(),
 
@@ -203,7 +215,7 @@ class PaymentResource extends Resource
                     ->visible(fn (Payment $record): bool => $record->status === PaymentStatus::PENDING)
                     ->form([
                         Textarea::make('verification_notes')
-                            ->label('Catatan Verifikasi (Opsional)')
+                            ->label('Catatan Verifikasi (Opsional)'),
                     ])
                     ->action(function (array $data, Payment $record) {
                         try {
@@ -232,7 +244,7 @@ class PaymentResource extends Resource
                     ->form([
                         Textarea::make('rejection_reason')
                             ->label('Alasan Penolakan')
-                            ->required()
+                            ->required(),
                     ])
                     ->action(function (array $data, Payment $record) {
                         try {

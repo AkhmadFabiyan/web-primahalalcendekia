@@ -2,15 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use App\Models\User;
 use App\Modules\Logs\Models\Activity;
-use App\Modules\Projects\Models\Project;
 use App\Modules\Projects\Enums\ProjectStatus;
+use App\Modules\Projects\Models\Project;
 use App\Modules\Projects\Services\ProjectCancellationService;
+use App\Modules\Projects\Services\ProjectClosureReadinessService;
 use App\Modules\Projects\Services\ProjectCompletionService;
-use App\Modules\Projects\Services\ProjectReopeningService;
+use App\Policies\ActivityPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class Phase28ActivityLogTest extends TestCase
@@ -27,7 +28,7 @@ class Phase28ActivityLogTest extends TestCase
     public function test_activity_log_is_append_only()
     {
         $user = User::factory()->create();
-        
+
         $activity = activity()
             ->causedBy($user)
             ->event('test_event')
@@ -41,7 +42,7 @@ class Phase28ActivityLogTest extends TestCase
     public function test_activity_log_cannot_be_deleted()
     {
         $user = User::factory()->create();
-        
+
         $activity = activity()
             ->causedBy($user)
             ->event('test_event')
@@ -66,7 +67,7 @@ class Phase28ActivityLogTest extends TestCase
         $this->assertEquals($project->id, $activity->project_id);
         $this->assertFalse($activity->is_client_visible);
         $this->assertEquals($user->id, $activity->causer_id);
-        
+
         $properties = $activity->properties;
         $this->assertEquals(ProjectStatus::OPERATIONAL->value, $properties['old']['status']);
         $this->assertEquals(ProjectStatus::CANCELLED->value, $properties['attributes']['status']);
@@ -77,9 +78,10 @@ class Phase28ActivityLogTest extends TestCase
     {
         $project = Project::factory()->create(['status' => ProjectStatus::CERTIFICATE_ISSUED]);
 
-        $mock = \Mockery::mock('alias:\App\Modules\Projects\Services\ProjectClosureReadinessService');
+        $mock = \Mockery::mock(ProjectClosureReadinessService::class);
         $mock->shouldReceive('evaluate')->andReturn([]);
         $mock->shouldReceive('isReady')->andReturn(true);
+        $this->app->instance(ProjectClosureReadinessService::class, $mock);
 
         $service = app(ProjectCompletionService::class);
         $service->checkCompletion($project);
@@ -89,7 +91,7 @@ class Phase28ActivityLogTest extends TestCase
         $this->assertNotNull($activity);
         $this->assertEquals($project->id, $activity->project_id);
         $this->assertTrue($activity->is_client_visible);
-        
+
         $properties = $activity->properties;
         $this->assertEquals(ProjectStatus::CERTIFICATE_ISSUED->value, $properties['old']['status']);
         $this->assertEquals(ProjectStatus::COMPLETED->value, $properties['attributes']['status']);
@@ -99,12 +101,12 @@ class Phase28ActivityLogTest extends TestCase
     {
         // Tests the Policy
         $user = User::factory()->create();
-        $user->assignRole(\App\Enums\Role::ADMIN->value);
-        
+        $user->assignRole(Role::ADMIN->value);
+
         $activity = activity()->event('test')->log('test log');
-        
-        $policy = new \App\Policies\ActivityPolicy();
-        
+
+        $policy = new ActivityPolicy;
+
         $this->assertFalse($policy->update($user, $activity));
         $this->assertFalse($policy->delete($user, $activity));
         $this->assertFalse($policy->create($user));
